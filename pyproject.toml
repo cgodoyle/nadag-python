@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nadag_python"
+version = "0.1.0"
+description = "A Python client for fetching geotechnical soundings and samples from the NADAG API"
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [
+  {name = "Cristian Godoy", email = "crgo@nve.no"}
+]
+dependencies = [
+    "geopandas",
+    "pandas",
+    "shapely",
+    "httpx",
+    "loguru",
+    "pydantic>=2.0",
+    "pydantic-settings",
+    "tenacity",
+    "numpy",
+]
+
+[project.optional-dependencies]
+dev = [
+    "jupyter", 
+    "matplotlib",
+    "zensical",
+    "mkdocstrings-python",
+    "ipykernel"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ty.rules]
+unused-ignore-comment = "warn"
+redundant-cast = "ignore"
+invalid-argument-type = "warn"
+unresolved-import = "warn"
+unresolved-attribute = "warn"
+possibly-missing-attribute = "warn"
+possibly-missing-import = "error"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"

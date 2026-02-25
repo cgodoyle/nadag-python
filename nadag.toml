@@ -1,0 +1,153 @@
+[methods.mapper]
+"1"     = "rp"  #  Dreietrykksondering
+"2"     = "cpt"  #  Trykksondering (CPT, CPTU)
+"15"    = "tot"  #  Totalsondering Norge
+"16"    = "tot"  #  Totalsondering Sverige
+"17"    = "rp"  #  Dreiesondering manuell
+"18"    = "rp"  #  Dreiesondering maskinell
+"36"    = "tot"  #  Kombinasjonssondering uspesifisert
+"37"    = "tot"  #  Kombinasjonssondering
+"41"    = "rp"  #  Statisk sondering uspesifisert
+"46"    = "rp"  #  Dreiesondering uspesifisert
+# ... Add all other mappings here
+# sonderingskoder
+# 1 : Dreietrykksondering
+# 2 : Trykksondering (CPT, CPTU)
+# 14 : Poretrykksmåling
+# 15 : Totalsondering Norge
+# 16 : Totalsondering Sverige
+# 17 : Dreiesondering manuell
+# 18 : Dreiesondering maskinell
+# 19 : Vingeboring
+# 20 : Enkel sondering
+# 21 : Ramsondering
+# 22 : Ramsondering A
+# 23 : Ramsondering B
+# 24 : Bergkontrollboring
+# 25 : Dilatometertest
+# 26 : Dynamisk sondering uspesifisert
+# 27 : Gassmåling
+# 28 : Grunnvannsmåling
+# 29 : Hejarsondering A
+# 30 : Hejarsondering B
+# 31 : HK sondering
+# 32 : Hydraulisk test
+# 33 : Jord-berg sondering 1
+# 34 : Jord-berg sondering 2
+# 35 : Jord-berg sondering 3
+# 36 : Kombinasjonssondering uspesifisert
+# 37 : Kombisondering
+# 38 : Platebelastning
+# 39 : Slagsondering
+# 40 : SPT
+# 41 : Statisk sondering uspesifisert
+# 42 : Stikksondering
+# 43 : Vektsondering manuell
+# 44 : Vektsondering maskinell
+# 45 : Ikke angitt
+# 46 : Dreiesondering uspesifisert
+# 49 : Miljøundersøkelse
+# 50 : Elektrisk sondering
+# 51 : Kjerneboring
+
+
+[methods.flag_codes]
+"hammering_starts"                  = ["11", "15", "63"]
+"hammering_ends"                    = ["16", "64"]
+"increased_rotation_rate_starts"    = ["51"]
+"increased_rotation_rate_ends"      = ["52"]
+"flushing_starts"                   = ["14", "63"]
+"flushing_ends"                     = ["62", "64"]
+# 1 ForrigeKodeFeil
+# 2 Startnivå
+# 3 NyMetode
+# 4 MerInformasjon
+# 5 TidligereStopp
+# 6 Opphold
+# 7 UtenVridning
+# 8 SynkVekt0
+# 9 SynkVekt0.64
+# 10 IngenRegistrering
+# 11 Slag
+# 12 Vridning
+# 13 Skarv
+# 14 Spyling
+# 15 StartSlag
+# 16 SluttSlag
+# 17 Fylling
+# 18 Tørrskorpe
+# 19 Friksjonsjord
+# 20 UorganiskKohesjonsjord
+# 21 OrganiskJord
+# 22 UbestemtJordart
+# 23 Leire
+# 24 JordMedSand
+# 25 JordMedGrus
+# 26 JordMedStein
+# 27 GjennomborretBlokkEllerStein
+# 28 IkkeMerkbareSprekker
+# 29 OppsprukketFjell
+# 30 SværtOppsprukketFjell
+# 31 FjellMedSlag
+# 32 IngenVurdering
+# 36 Avsluttet
+# 37 FunksjonskontrollOk
+# 38 FunksjonskontrollIkkeOk
+# 39 Hindring
+# 41 Frosset
+# 42 Skadet
+# 43 BøydSonderingsstang
+# 44 SonderingstangAv
+# 46 AntattGrunnvann
+# 47 Tidsangivelse
+# 48 SpissDyp
+# 49 Frostisolering
+# 50 KullAske
+# 51 StartVridning
+# 52 SluttVridning
+# 53 UrenMakadam
+# 54 Fjellnivå
+# 55 Terrengoverflate
+# 56 Silt
+# 57 Torv
+# 58 MoreneJord
+# 59 LeirMorene
+# 60 SandmedGrus
+# 61 BlokkSlutt
+# 62 SpylingSlutt
+# 63 SlagSpyl
+# 64 SlagSpylSlutt
+# 65 Pumping
+# 66 PumpingSlutt
+
+# ... Add all flag groups
+
+[methods]
+cpt_info_columns = ["alpha", "rørKappeKorreksjonsFaktor", "atmosferiskTrykkKorreksjon", "hylseRadieKorreksjon", "inSituPoretrykkObservasjon.href"] 
+
+[samples]
+brittle_keywords    = ["quick", "kvikk", "sprøbrudd"]
+filter              = [
+                        "6",  # Kjerneprøve
+                        "47",  # Prøve uspesifisert
+                        "48",  # Prøveserie uspesifisert
+                      ]
+
+                      # prøvekoder
+                      # 3 : Blokkprøve
+                      # 4 : Graveprøve
+                      # 5 : Kanneprøve
+                      # 6 : Kjerneprøve
+                      # 7 : Naverprøve
+                      # 8 : Ramprøve
+                      # 9 : Sedimentprøve
+                      # 10 : Skovlprøve
+                      # 11 : Stempelprøve
+                      # 12 : Vannprøve
+                      # 13 : Gassprøve
+                      # 47 : Prøve uspesifisert
+                      # 48 : Prøveserie uspesifisert
+[samples.classification_names]
+brittle        = "quick_clay"
+other          = "other"
+nothing        = "nothing"
