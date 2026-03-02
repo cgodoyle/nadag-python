@@ -38,10 +38,59 @@ class NadagConfig(BaseModel):
     samples: SampleConfigModel
 
 
+def load_default_nadag_config() -> NadagConfig:
+    """
+    Basic NadagConfig
+    """
+    methods = MethodConfigModel(
+        mapper={
+            "1": "rp",
+            "2": "cpt",
+            "15": "tot",
+            "16": "tot",
+            "17": "rp",
+            "18": "rp",
+            "36": "tot",
+            "37": "tot",
+            "41": "rp",
+            "46": "rp",
+        },
+        flag_codes={
+            "hammering_starts": ["11", "15", "63"],
+            "hammering_ends": ["16", "64"],
+            "increased_rotation_rate_starts": ["51"],
+            "increased_rotation_rate_ends": ["52"],
+            "flushing_starts": ["14", "63"],
+            "flushing_ends": ["62", "64"],
+        },
+        cpt_info_columns=[
+            "alpha",
+            "rørKappeKorreksjonsFaktor",
+            "atmosferiskTrykkKorreksjon",
+            "hylseRadieKorreksjon",
+            "inSituPoretrykkObservasjon.href",
+        ],
+    )
+    samples = SampleConfigModel(
+        brittle_keywords=["quick", "kvikk", "sprøbrudd"],
+        filter=[
+            "6",
+            "47",
+            "48",
+        ],
+        classification_names={
+            "brittle": "quick_clay",
+            "other": "other",
+            "nothing": "nothing",
+        },
+    )
+    return NadagConfig(methods=methods, samples=samples)
+
+
 def load_nadag_config(filename: str) -> NadagConfig:
     """
     Loads the NADAG configuration from a TOML file. The function searches for the file in multiple locations:
-    1. Current working directory
+    1. Current working directory or absolute path (if included)
     2. The same directory as this config.py file (package directory)
     3. The project root directory (assuming src/nadag_python/config.py -> go up 2 levels)
     If the file is not found in any of these locations, a FileNotFoundError is raised with details of the search paths.
@@ -71,14 +120,22 @@ def load_nadag_config(filename: str) -> NadagConfig:
             data = tomllib.load(f)
         return NadagConfig(**data)
 
-    # If all fails, raise detailed error
-    raise FileNotFoundError(
-        f"Configuration file '{filename}' not found.\n"
-        f"Searched in:\n"
-        f"1. {cwd_path.absolute()} (CWD)\n"
-        f"2. {package_path.absolute()} (Package Dir)\n"
-        f"3. {project_root_path.absolute()} (Project Root)"
-    )
+    # if toml-file is not found, fallback to basic config
+    try:
+        basic_config = load_default_nadag_config()
+
+        return basic_config
+    except Exception as e:
+        # If all fails, raise detailed error
+        raise FileNotFoundError(
+            f"Configuration file '{filename}' not found.\n"
+            f"Searched in:\n"
+            f"1. {cwd_path.absolute()} (CWD)\n"
+            f"2. {package_path.absolute()} (Package Dir)\n"
+            f"3. {project_root_path.absolute()} (Project Root)"
+            "Basic configuration could not be loaded either due to:"
+            f"{e}"
+        )
 
 
 class Settings(BaseSettings):
@@ -93,7 +150,7 @@ class Settings(BaseSettings):
     API_BASE_URL: str = "https://geo.ngu.no/api/features/grunnundersokelser_utvidet/collections"
     API_FAKTAARK_URL: str = "https://geo.ngu.no/api/faktaark/nadag/visGeotekniskBorehull.php"
 
-    API_TIMEOUT: int = 300
+    API_TIMEOUT: int = 500
     API_DATA_LIMIT: int = 10000  # Default limit for soundings data fetching
     API_RETRY_ATTEMPTS: int = 3
     API_RETRY_MIN_WAIT: int = 1  # seconds
@@ -106,7 +163,12 @@ class Settings(BaseSettings):
 
     NADAG_TOML_PATH: str = "nadag.toml"
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix="NADAG_PYTHON_",
+        env_file_encoding="utf-8",
+        extra="allow",
+    )
 
 
 settings = Settings()
