@@ -4,19 +4,18 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 
-from . import get_module_logger
 from .data_models import (
     FIELD,
     GeoDataFrameType,
     GrundigMethodDataFrame,
     GrundigSampleDataFrame,
-    MethodDataDataFrame,
     MethodDataFrame,
     MethodsConfig,
     NadagData,
     SampleDataFrame,
     SamplesConfig,
 )
+from .logging import get_module_logger
 
 logger = get_module_logger(__name__)
 
@@ -24,6 +23,62 @@ logger = get_module_logger(__name__)
 ########################################################################################################################
 ##### functions for methods (soundings)
 ########################################################################################################################
+
+
+def add_empty_soundings(investigations, soundings_info) -> pd.DataFrame:
+    """
+    Adds empty soundings to the soundings_info DataFrame for investigations that do not have any method data.
+    The function identifies investigations that do not have any method data by checking for the presence of method
+    keys in the investigations DataFrame. For each investigation that does not have method data,
+    it creates a new row in the soundings_info DataFrame with the appropriate fields filled in,
+    including a dummy method_id and method_type to indicate that it is an empty sounding.
+    The resulting DataFrame is then concatenated with the original soundings_info DataFrame and returned as output.
+
+        Args:
+        investigations (pd.DataFrame): The DataFrame containing investigation data, including method keys.
+        soundings_info (pd.DataFrame): The DataFrame containing soundings information to which empty
+                                        soundings will be added.
+        Returns:
+            pd.DataFrame: The updated soundings_info DataFrame with empty soundings added.
+    """
+
+    method_keys = [xx.metode_key for xx in FIELD.methods]
+
+    investigations_with_no_data = investigations[
+        ~investigations.apply(
+            lambda row: any([(method_key in row and pd.notna(row[method_key])) for method_key in method_keys]),
+            axis=1,
+        )
+    ]
+    if investigations_with_no_data.empty:
+        return pd.DataFrame()
+    logger.debug(
+        f"Found {len(investigations_with_no_data)} investigations with no method data. Adding empty soundings for these investigations."
+    )
+    empty_methods_df = pd.DataFrame(
+        [
+            {
+                # MethodDataFrame.geometry.name: xx[MethodDataFrame.geometry.value],
+                MethodDataFrame.method_id.value: xx[FIELD.id_field]
+                + "_"
+                + str(xx[MethodDataFrame.method_type_nadag.value]),
+                MethodDataFrame.gbhu_id.value: xx[FIELD.id_field],
+                MethodDataFrame.depth_to_rock.value: xx[MethodDataFrame.depth_to_rock.value],
+                MethodDataFrame.depth_to_rock_quality.value: xx[MethodDataFrame.depth_to_rock_quality.value],
+                MethodDataFrame.method_type.value: MethodsConfig.GEOTEKNISKMETODE_TO_METHOD_TYPE_MAPPER.get(
+                    xx[MethodDataFrame.method_type_nadag.value]
+                ),
+            }
+            for _, xx in investigations_with_no_data.iterrows()
+        ]
+    )
+
+    if not empty_methods_df.empty:
+        soundings_info_out = pd.concat([empty_methods_df, soundings_info], ignore_index=True).reset_index(drop=True)
+        logger.debug(f"Added {len(empty_methods_df)} empty soundings to soundings_info.")
+    else:
+        soundings_info_out = soundings_info.copy()
+    return soundings_info_out
 
 
 def postprocess_methods_data_and_info(
@@ -321,7 +376,7 @@ def aggregate_samples(
     default_agg_func = take_any
 
     agg_funcs = {
-        SampleDataFrame.water_content.name: "mean",  # Sumar los valores de la columna A
+        SampleDataFrame.water_content.name: "mean",
         SampleDataFrame.layer_composition.name: _clf_aggr,
         SampleDataFrame.layer_composition_full.name: join_texts,
         SampleDataFrame.liquid_limit.name: "mean",
@@ -398,6 +453,7 @@ def export_samples_to_gdf(nadag_data: NadagData) -> GeoDataFrameType:
     samples[FIELD.z] = samples[SampleDataFrame.location_elevation.name]
 
     samples = samples.drop(columns=[col for col in samples.columns if col not in GrundigSampleDataFrame.fields()])
+    samples = samples.set_crs(nadag_data.locations.crs)
 
     return samples
 
@@ -415,7 +471,7 @@ def export_methods_to_gdf(nadag_data: NadagData) -> GeoDataFrameType:
     """
 
     methods = gpd.GeoDataFrame(
-        [nadag_data.query_method(method_id=mm) for mm in nadag_data.methods_data["method_id"].unique()]
+        [nadag_data.query_method(method_id=mm) for mm in nadag_data.methods_info["method_id"].unique()]
     )
 
     methods = methods.rename(columns=GrundigMethodDataFrame.column_mapper())
@@ -427,25 +483,6 @@ def export_methods_to_gdf(nadag_data: NadagData) -> GeoDataFrameType:
     methods[[FIELD.x, FIELD.y]] = methods.geometry.get_coordinates()
     methods[FIELD.z] = methods[MethodDataFrame.elevation.name]
 
-    # Handling of empty boreholes in nadag (old ones) ------------------------------------------
-    dummy_field = "dummy_data"
-    methods[dummy_field] = [
-        pd.DataFrame(
-            {
-                MethodDataDataFrame.depth.name: [0],
-                MethodDataDataFrame.penetration_force.name: [0],
-            }
-        )
-        for _ in range(len(methods))
-    ]
-
-    methods[GrundigMethodDataFrame.data.name] = methods[GrundigMethodDataFrame.data.name].fillna(methods[dummy_field])
-
-    # dummy method id for empty methods
-    methods[GrundigMethodDataFrame.method_id.name] = methods[GrundigMethodDataFrame.method_id.name].fillna(
-        methods[MethodDataFrame.gbhu_id.name] + "_" + methods[MethodDataFrame.method_type_nadag.name].astype(str)
-    )
-
     # convert to method types ala Field Manager using the mapper from MethodsConfig
     methods[GrundigMethodDataFrame.method_type.name] = methods[MethodDataFrame.method_type_nadag.name].map(
         MethodsConfig.GEOTEKNISKMETODE_TO_METHOD_TYPE_MAPPER
@@ -456,6 +493,7 @@ def export_methods_to_gdf(nadag_data: NadagData) -> GeoDataFrameType:
     cols_to_drop = [col for col in methods.columns if col not in GrundigMethodDataFrame.fields()]
     methods = methods.drop(columns=cols_to_drop)
     methods = methods.fillna(np.nan)
+    methods = methods.set_crs(nadag_data.locations.crs)
 
     return methods
 

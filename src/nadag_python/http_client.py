@@ -11,12 +11,12 @@ from tenacity import (
     wait_exponential,
 )
 
-from . import get_module_logger
 from .config import settings
 from .data_models import (
     FIELD,
     PaginatedResponse,
 )
+from .logging import get_module_logger
 from .utils import clean_url
 
 TIMEOUT = httpx.Timeout(
@@ -63,6 +63,13 @@ class NadagHTTPClient:
     @property
     def query_url(self):
         return self.base_url + "/{collection}/items"
+
+    @api_retry()
+    async def check_api_status(self) -> bool:
+        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            response = await client.get(self.base_url)
+            response.raise_for_status()
+            return True
 
     def build_collection_url(self, collection: str, query_params: Optional[dict[str, Any]] = None) -> str:
         """

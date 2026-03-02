@@ -5,7 +5,6 @@ import geopandas as gpd
 import pandas as pd
 from shapely.geometry import box
 
-from . import get_module_logger
 from .config import CRS, settings
 from .data_models import (
     FIELD,
@@ -16,7 +15,9 @@ from .data_models import (
     SampleDataFrame,
 )
 from .http_client import NadagHTTPClient
+from .logging import get_module_logger
 from .postprocessing import (
+    add_empty_soundings,
     create_intervals_from_comments,
     get_samples_dataframe,
     merge_sample_dataframes,
@@ -350,8 +351,18 @@ async def fetch_from_bounds(
 
     soundings_info, soundings_data = postprocess_methods_data_and_info(soundings_info_pre, soundings_data_pre)
 
-    if soundings_info.empty or soundings_data.empty or test_series.empty:
-        logger.warning("No soundings/test series data found.")
+    soundings_info = add_empty_soundings(investigations, soundings_info)
+
+    if test_series.empty:
+        logger.warning("No test series data found.")
+        temp_data = NadagData(
+            bounds=tuple(bounds),
+            locations=locations,
+            investigations=investigations,
+            methods_info=soundings_info,
+            methods_data=soundings_data,
+        )
+
         return temp_data
 
     temp_data = NadagData(
@@ -482,3 +493,14 @@ def get_sounding_urls_from_series(method_item: pd.Series) -> dict:
     """
     query_dict = method_item[["method_type", "method_id", "gbhu_id", "location_id", "investigation_area_id"]].to_dict()
     return get_sounding_urls(**query_dict)
+
+
+async def check_api_status() -> bool:
+    """
+    Check the status of the NADAG API.
+
+    Returns:
+        bool: True if the API is reachable and returns a successful status code, False otherwise.
+    """
+    client = NadagHTTPClient()
+    return await client.check_api_status()

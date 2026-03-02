@@ -12,8 +12,8 @@ import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from shapely.geometry.base import BaseGeometry
 
-from . import get_module_logger
 from .config import nadag_config, settings
+from .logging import get_module_logger
 
 logger = get_module_logger(__name__)
 
@@ -92,6 +92,7 @@ class ApiSchemaConfig:
     z = "z"
     href = "href"
     feature_id = "lokalid"  # as the API shows, the response comes just as 'id' outside the properties
+    # empty_method_id_suffix = "_1"   # we use _method_type_nadag
 
     tot = MethodFields(
         name="tot",
@@ -254,6 +255,7 @@ class NadagData:
             return {}
 
         method_id_field = MethodDataFrame.method_id.value
+
         sounding_info = self.methods_info.query(f"{method_id_field} == @method_id")
         sounding_data = self.methods_data.query(f"{method_id_field} == @method_id").copy()
 
@@ -272,7 +274,9 @@ class NadagData:
             )
             gbhu_id_from_nadag = None
         finally:
-            if gbhu_id != gbhu_id_from_nadag:
+            if (
+                gbhu_id != gbhu_id_from_nadag and gbhu_id not in method_id
+            ):  # allow the method_id to contain the gbhu_id for empty methods
                 logger.warning(
                     f"GBHU ID mismatch for method_id {method_id}: {gbhu_id} (info) vs {gbhu_id_from_nadag} (data)."
                 )
@@ -284,13 +288,25 @@ class NadagData:
                 f"Multiple investigations found for GBHU ID {gbhu_id} in method_id {method_id}. Using the first one."
             )
         investigation = investigation.iloc[0]
-        location_id = investigation[MethodDataFrame.location_id]
-        location = self.locations.loc[self.locations[FIELD.id_field] == location_id].iloc[0]
 
         sounding_data = sounding_data.rename(columns=MethodDataDataFrame.column_mapper())
         sounding_data = sounding_data.drop(
             columns=[col for col in sounding_data.columns if col not in MethodDataDataFrame.fields()]
         )
+
+        if sounding_data.empty:
+            sounding_data[MethodDataDataFrame.depth.name] = [0]
+            sounding_data[MethodDataDataFrame.penetration_force.name] = [0]
+
+        return_dict = self._setup_method_fields(investigation, sounding_data, method_id, gbhu_id)
+
+        return return_dict
+
+    def _setup_method_fields(self, investigation, sounding_data, method_id, gbhu_id) -> dict[str, Any]:
+
+        location_id = investigation[MethodDataFrame.location_id]
+        logger.debug(location_id)
+        location = self.locations.loc[self.locations[FIELD.id_field] == location_id].iloc[0]
 
         documents = (
             investigation[MethodDataFrame.documents] if MethodDataFrame.documents in investigation.index else None
