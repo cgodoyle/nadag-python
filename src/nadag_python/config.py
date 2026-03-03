@@ -151,12 +151,11 @@ class Settings(BaseSettings):
     API_FAKTAARK_URL: str = "https://geo.ngu.no/api/faktaark/nadag/visGeotekniskBorehull.php"
 
     API_TIMEOUT: int = 500
-    API_DATA_LIMIT: int = 10000  # Default limit for soundings data fetching
     API_RETRY_ATTEMPTS: int = 3
     API_RETRY_MIN_WAIT: int = 1  # seconds
     API_RETRY_MAX_WAIT: int = 10  # seconds
     API_MAX_CONCURRENCY: int = 50
-    API_MAX_DIST_QUERY: int = 500  # Default max distance for query in meters
+    API_MAX_DIST_QUERY: int = 2_000  # Default max distance for query in meters
 
     API_CRS: int = 4326
     DEFAULT_CRS: int = 25833
