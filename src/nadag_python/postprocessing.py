@@ -143,10 +143,19 @@ def postprocess_methods_data_and_info(
         new_data.append(method_data)
         new_info.append(method_info)
 
-    new_data = pd.concat(new_data, ignore_index=True).reset_index(drop=True)
-    new_info = pd.concat(new_info, ignore_index=True).reset_index(drop=True)
+    if len(new_data) == 0:
+        logger.warning("No method data found for any method type. Returning empty DataFrames.")
+        new_data_df = pd.DataFrame()
+    else:
+        new_data_df = pd.concat(new_data, ignore_index=True).reset_index(drop=True)
 
-    return new_info, new_data
+    if len(new_info) == 0:
+        logger.warning("No method info found for any method type. Returning empty DataFrames.")
+        new_info_df = pd.DataFrame()
+    else:
+        new_info_df = pd.concat(new_info, ignore_index=True).reset_index(drop=True)
+
+    return new_info_df, new_data_df
 
 
 def create_flagged_column(
