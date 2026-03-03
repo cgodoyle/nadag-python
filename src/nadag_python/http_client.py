@@ -66,6 +66,12 @@ class NadagHTTPClient:
 
     @api_retry()
     async def check_api_status(self) -> bool:
+        """
+        Check the status of the NADAG API.
+
+        Returns:
+            bool: True if the API is reachable and responsive, False otherwise.
+        """
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
             response = await client.get(self.base_url)
             response.raise_for_status()

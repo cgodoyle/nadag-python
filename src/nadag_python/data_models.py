@@ -246,6 +246,7 @@ class NadagData:
 
         Args:
             method_id (str): The identifier for the geotechnical method to query.
+
         Returns:
             dict[str, Any]: A dictionary containing the combined information for the specified method, or an
             empty dictionary if the method_id is not found or if there are inconsistencies in the data.
@@ -308,6 +309,21 @@ class NadagData:
     def _setup_method_fields(
         self, investigation: pd.Series, sounding_data: pd.DataFrame, method_id: str, gbhu_id: str
     ) -> dict[str, Any]:
+        """
+        Helper function to set up the fields for a method query. This is separated from the main query_method function for better readability and maintainability.
+
+        Args:
+            investigation (pd.Series): The investigation data for the method.
+            sounding_data (pd.DataFrame): The sounding data for the method.
+            method_id (str): The identifier for the geotechnical method.
+            gbhu_id (str): The GBHU ID associated with the method.
+
+        Returns:
+            dict[str, Any]: A dictionary containing the combined information for the specified method,
+                            including geometry, method details, location details, investigation details,
+                            and the sounding data as a DataFrame.
+
+        """
 
         location_id = investigation[MethodDataFrame.location_id]
         location = self.locations.loc[self.locations[FIELD.id_field] == location_id].iloc[0]
@@ -401,7 +417,7 @@ class PaginatedResponse(BaseModel):
 
     """
 
-    type: Literal["FeatureCollection", "Feature"] = "FeatureCollection"
+    type: Literal["FeatureCollection"] = "FeatureCollection"
     numberReturned: Optional[int] = Field(None, ge=0)
     numberMatched: Optional[int] = Field(None, ge=0)
     timeStamp: Optional[str] = None

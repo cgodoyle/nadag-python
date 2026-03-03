@@ -28,6 +28,17 @@ from .utils import case_insensitive_rename, split_bbox, transform_bounds
 logger = get_module_logger(__name__)
 
 
+async def check_api_status() -> bool:
+    """
+    Check the status of the NADAG API.
+
+    Returns:
+        bool: True if the API is reachable and returns a successful status code, False otherwise.
+    """
+    client = NadagHTTPClient()
+    return await client.check_api_status()
+
+
 async def get_features_in_bbox_single(
     http_client: NadagHTTPClient, bbox: BoundingBox, collection: str, limit: int = 1000
 ) -> PaginatedResponse:
@@ -108,6 +119,54 @@ async def get_features_in_bbox(
 
     response_list = [item for item in response_list if isinstance(item, PaginatedResponse) and len(item) > 0]
     return PaginatedResponse.merge(response_list)
+
+
+async def fetch_from_location_ids(location_ids: list[str]) -> NadagData:
+    """
+    Fetch data from the NADAG API for a given list of location IDs.
+
+    Args:
+        loc_ids (list[str]): A list of location IDs to fetch data for.
+    Returns:
+        NadagData: A NadagData object containing the fetched data for the given location ID.
+    """
+    import pandas as pd
+
+    from nadag_python.config import settings
+    from nadag_python.data_models import NadagData, PaginatedResponse
+    from nadag_python.http_client import NadagHTTPClient
+
+    nadag_client = NadagHTTPClient()
+
+    href_list = [nadag_client.build_collection_url(collection="geotekniskborehull") + f"/{lid}" for lid in location_ids]
+    resp = await nadag_client.get_href_list(href_list)
+
+    locations = pd.concat(
+        [
+            PaginatedResponse(
+                type="FeatureCollection",
+                features=[rr],
+                numberReturned=len(rr["features"]) if isinstance(rr, dict) else 1,
+                numberMatched=len(rr["features"]) if isinstance(rr, dict) else 1,
+                timeStamp=None,
+            ).to_gdf()
+            for rr in resp
+        ]
+    )
+    locations = locations.set_crs(settings.API_CRS, allow_override=True).to_crs(settings.DEFAULT_CRS)
+    href_list = [
+        nadag_client.build_collection_url(collection="geotekniskborehullunders", query_params={"underspkt_fk": lid})
+        for lid in location_ids
+    ]
+    resp = await nadag_client.get_href_list(href_list)
+    investigations = pd.concat([PaginatedResponse(**rr).to_gdf() for rr in resp])
+    investigations = investigations.set_crs(settings.API_CRS, allow_override=True).to_crs(settings.DEFAULT_CRS)
+
+    temp_data = NadagData(bounds=locations.total_bounds, locations=locations, investigations=investigations)
+
+    temp_data = await get_method_and_sample_nadag_data(nadag_client, temp_data)
+
+    return temp_data
 
 
 async def get_soundings_data_raw(
@@ -291,62 +350,6 @@ async def get_test_series(
     return merged_samples_df
 
 
-async def fetch_from_bounds(
-    bounds: BoundingBox,
-    max_distance_query: int | float = settings.API_MAX_DIST_QUERY,
-) -> NadagData:
-    """
-    Fetch features from the API within the specified bounds.
-
-    Args:
-        bounds (BoundingBox): A list or tuple of four floats representing the bounding box [minx, miny, maxx, maxy].
-        max_distance_query (int | float): The maximum distance for the query.
-                                              Defaults to the value in settings.API_MAX_DIST_QUERY.
-
-    Returns:
-        NadagData: A new NadagData object with the fetched data.
-    """
-
-    logger.info(f"Fetching features in bounds: {bounds}")
-
-    http_client = NadagHTTPClient()
-
-    gbhu_response, gbh_response = await asyncio.gather(
-        get_features_in_bbox(
-            http_client,
-            bounds,
-            FIELD.geotekniskborehullunders,
-            max_dist_query=max_distance_query,
-        ),
-        get_features_in_bbox(
-            http_client,
-            bounds,
-            FIELD.geotekniskborehull,
-            max_dist_query=max_distance_query,
-        ),
-    )
-
-    if len(gbhu_response) == 0:
-        logger.warning(f"No features found in {FIELD.geotekniskborehullunders} collection for the given bounds.")
-        return NadagData(bounds=tuple(bounds))
-
-    investigations = gbhu_response.to_gdf()
-    logger.info(f"Fetched {len(investigations)} features in {FIELD.geotekniskborehullunders} collection.")
-
-    locations = gbh_response.to_gdf()
-    logger.info(f"Fetched {len(locations)} features in {FIELD.geotekniskborehull} collection.")
-
-    # Create intermediate object for soundings fetch
-    temp_data = NadagData(
-        bounds=tuple(bounds),
-        locations=locations,
-        investigations=investigations,
-    )
-
-    temp_data = await get_method_and_sample_nadag_data(http_client, temp_data)
-    return temp_data
-
-
 async def get_method_and_sample_nadag_data(http_client: NadagHTTPClient, temp_data: NadagData) -> NadagData:
     """
     Fetch soundings and test series data from the API based on the investigations and locations data in temp_data.
@@ -402,6 +405,62 @@ async def get_method_and_sample_nadag_data(http_client: NadagHTTPClient, temp_da
         test_series_data=test_series,
         test_series_aggregated=samples,
     )
+
+
+async def fetch_from_bounds(
+    bounds: BoundingBox,
+    max_distance_query: int | float = settings.API_MAX_DIST_QUERY,
+) -> NadagData:
+    """
+    Fetch features from the API within the specified bounds.
+
+    Args:
+        bounds (BoundingBox): A list or tuple of four floats representing the bounding box [minx, miny, maxx, maxy].
+        max_distance_query (int | float): The maximum distance for the query.
+                                              Defaults to the value in settings.API_MAX_DIST_QUERY.
+
+    Returns:
+        NadagData: A new NadagData object with the fetched data.
+    """
+
+    logger.info(f"Fetching features in bounds: {bounds}")
+
+    http_client = NadagHTTPClient()
+
+    gbhu_response, gbh_response = await asyncio.gather(
+        get_features_in_bbox(
+            http_client,
+            bounds,
+            FIELD.geotekniskborehullunders,
+            max_dist_query=max_distance_query,
+        ),
+        get_features_in_bbox(
+            http_client,
+            bounds,
+            FIELD.geotekniskborehull,
+            max_dist_query=max_distance_query,
+        ),
+    )
+
+    if len(gbhu_response) == 0:
+        logger.warning(f"No features found in {FIELD.geotekniskborehullunders} collection for the given bounds.")
+        return NadagData(bounds=tuple(bounds))
+
+    investigations = gbhu_response.to_gdf()
+    logger.info(f"Fetched {len(investigations)} features in {FIELD.geotekniskborehullunders} collection.")
+
+    locations = gbh_response.to_gdf()
+    logger.info(f"Fetched {len(locations)} features in {FIELD.geotekniskborehull} collection.")
+
+    # Create intermediate object for soundings fetch
+    temp_data = NadagData(
+        bounds=tuple(bounds),
+        locations=locations,
+        investigations=investigations,
+    )
+
+    temp_data = await get_method_and_sample_nadag_data(http_client, temp_data)
+    return temp_data
 
 
 def get_sounding_by_id(
@@ -509,60 +568,3 @@ def get_sounding_urls_from_series(method_item: pd.Series) -> dict:
     """
     query_dict = method_item[["method_type", "method_id", "gbhu_id", "location_id", "investigation_area_id"]].to_dict()
     return get_sounding_urls(**query_dict)
-
-
-async def check_api_status() -> bool:
-    """
-    Check the status of the NADAG API.
-
-    Returns:
-        bool: True if the API is reachable and returns a successful status code, False otherwise.
-    """
-    client = NadagHTTPClient()
-    return await client.check_api_status()
-
-
-async def fetch_from_location_ids(location_ids: list[str]) -> NadagData:
-    """
-    Fetch data from the NADAG API for a given list of location IDs.
-
-    Args:
-        loc_ids (list[str]): A list of location IDs to fetch data for.
-    Returns:
-        NadagData: A NadagData object containing the fetched data for the given location ID.
-    """
-    import pandas as pd
-
-    from nadag_python.config import settings
-    from nadag_python.data_models import NadagData, PaginatedResponse
-    from nadag_python.http_client import NadagHTTPClient
-
-    nadag_client = NadagHTTPClient()
-
-    href_list = [nadag_client.build_collection_url(collection="geotekniskborehull") + f"/{lid}" for lid in location_ids]
-    resp = await nadag_client.get_href_list(href_list)
-    feature_coll = [
-        {
-            "type": "FeatureCollection",
-            "features": [rr],
-            "numberReturned": len(rr),
-            "numberMatched": len(rr),
-            "timeStamp": None,
-        }
-        for rr in resp
-    ]
-    locations = pd.concat([PaginatedResponse(**rr).to_gdf() for rr in feature_coll])
-    locations = locations.set_crs(settings.API_CRS, allow_override=True).to_crs(settings.DEFAULT_CRS)
-    href_list = [
-        nadag_client.build_collection_url(collection="geotekniskborehullunders", query_params={"underspkt_fk": lid})
-        for lid in location_ids
-    ]
-    resp = await nadag_client.get_href_list(href_list)
-    investigations = pd.concat([PaginatedResponse(**rr).to_gdf() for rr in resp])
-    investigations = investigations.set_crs(settings.API_CRS, allow_override=True).to_crs(settings.DEFAULT_CRS)
-
-    temp_data = NadagData(bounds=locations.total_bounds, locations=locations, investigations=investigations)
-
-    temp_data = await get_method_and_sample_nadag_data(nadag_client, temp_data)
-
-    return temp_data
