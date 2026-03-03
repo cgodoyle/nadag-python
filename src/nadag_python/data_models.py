@@ -257,7 +257,10 @@ class NadagData:
         method_id_field = MethodDataFrame.method_id.value
 
         sounding_info = self.methods_info.query(f"{method_id_field} == @method_id")
-        sounding_data = self.methods_data.query(f"{method_id_field} == @method_id").copy()
+        if method_id_field in self.methods_data.columns:
+            sounding_data = self.methods_data.query(f"{method_id_field} == @method_id").copy()
+        else:
+            sounding_data = pd.DataFrame()
 
         if sounding_info.empty:
             logger.warning(f"No sounding info found for method_id {method_id}. Returning empty dict.")
@@ -302,45 +305,41 @@ class NadagData:
 
         return return_dict
 
-    def _setup_method_fields(self, investigation, sounding_data, method_id, gbhu_id) -> dict[str, Any]:
+    def _setup_method_fields(
+        self, investigation: pd.Series, sounding_data: pd.DataFrame, method_id: str, gbhu_id: str
+    ) -> dict[str, Any]:
 
         location_id = investigation[MethodDataFrame.location_id]
-        logger.debug(location_id)
         location = self.locations.loc[self.locations[FIELD.id_field] == location_id].iloc[0]
 
-        documents = (
-            investigation[MethodDataFrame.documents] if MethodDataFrame.documents in investigation.index else None
-        )
-        interpretations = (
-            investigation[MethodDataFrame.interpretations]
-            if MethodDataFrame.interpretations in investigation.index
-            else None
-        )
+        inv = investigation.to_dict()
+        loc = location.to_dict()
+
         # fmt: off
         # this can be a Pydantic Model (Method) with validation and default values, but for simplicity we return a dict for now
         return_dict = {
-            MethodDataFrame.geometry.name                : location.geometry, 
-            MethodDataFrame.method_id.name               : method_id, 
-            MethodDataFrame.gbhu_id.name                 : gbhu_id, 
-            MethodDataFrame.location_name.name           : location[MethodDataFrame.location_name], 
-            MethodDataFrame.location_id.name             : location_id, 
-            MethodDataFrame.depth.name                   : investigation[MethodDataFrame.depth], 
-            MethodDataFrame.stop_code.name               : investigation[MethodDataFrame.stop_code], 
-            MethodDataFrame.date_investigation_start.name: investigation[MethodDataFrame.date_investigation_start],
-            MethodDataFrame.date_adquisition.name        : location[MethodDataFrame.date_adquisition],
-            MethodDataFrame.number_of_boreholes.name     : location[MethodDataFrame.number_of_boreholes],
-            MethodDataFrame.elevation.name               : location[MethodDataFrame.elevation],
-            MethodDataFrame.elevation_reference.name     : location[MethodDataFrame.elevation_reference],
-            MethodDataFrame.external_id.name             : location[MethodDataFrame.external_id],
-            MethodDataFrame.quick_clay_detection.name    : location[MethodDataFrame.quick_clay_detection],
-            MethodDataFrame.description.name             : location[MethodDataFrame.description],
-            MethodDataFrame.documents.name               : documents,
-            MethodDataFrame.interpretations.name         : interpretations,           
-            MethodDataFrame.investigation_area_id.name   : location[MethodDataFrame.investigation_area_id], 
-            MethodDataFrame.depth_to_rock_quality.name   : investigation[MethodDataFrame.depth_to_rock_quality], 
-            MethodDataFrame.depth_to_rock.name           : investigation[MethodDataFrame.depth_to_rock], 
-            MethodDataFrame.method_type_nadag.name       : investigation[MethodDataFrame.method_type_nadag], 
-            MethodDataFrame.data.name                    : sounding_data, 
+            MethodDataFrame.geometry.name                : location[MethodDataFrame.geometry.value],
+            MethodDataFrame.method_id.name               : method_id,
+            MethodDataFrame.gbhu_id.name                 : gbhu_id,
+            MethodDataFrame.location_name.name           : loc.get(MethodDataFrame.location_name.value, "Unknown"),
+            MethodDataFrame.location_id.name             : location_id,
+            MethodDataFrame.depth.name                   : inv.get(MethodDataFrame.depth.value),
+            MethodDataFrame.stop_code.name               : inv.get(MethodDataFrame.stop_code.value),
+            MethodDataFrame.date_investigation_start.name: inv.get(MethodDataFrame.date_investigation_start.value),
+            MethodDataFrame.date_adquisition.name        : loc.get(MethodDataFrame.date_adquisition.value),
+            MethodDataFrame.number_of_boreholes.name     : loc.get(MethodDataFrame.number_of_boreholes.value),
+            MethodDataFrame.elevation.name               : loc.get(MethodDataFrame.elevation.value),
+            MethodDataFrame.elevation_reference.name     : loc.get(MethodDataFrame.elevation_reference.value),
+            MethodDataFrame.external_id.name             : loc.get(MethodDataFrame.external_id.value),
+            MethodDataFrame.quick_clay_detection.name    : loc.get(MethodDataFrame.quick_clay_detection.value),
+            MethodDataFrame.description.name             : loc.get(MethodDataFrame.description.value),
+            MethodDataFrame.documents.name               : inv.get(MethodDataFrame.documents.value, None),
+            MethodDataFrame.interpretations.name         : inv.get(MethodDataFrame.interpretations.value, None),
+            MethodDataFrame.investigation_area_id.name   : loc.get(MethodDataFrame.investigation_area_id.value),
+            MethodDataFrame.depth_to_rock_quality.name   : inv.get(MethodDataFrame.depth_to_rock_quality.value),
+            MethodDataFrame.depth_to_rock.name           : inv.get(MethodDataFrame.depth_to_rock.value),
+            MethodDataFrame.method_type_nadag.name       : investigation[MethodDataFrame.method_type_nadag.value],
+            MethodDataFrame.data.name                    : sounding_data,
         }
         # fmt: on
         return return_dict
@@ -402,7 +401,7 @@ class PaginatedResponse(BaseModel):
 
     """
 
-    type: Literal["FeatureCollection"] = "FeatureCollection"
+    type: Literal["FeatureCollection", "Feature"] = "FeatureCollection"
     numberReturned: Optional[int] = Field(None, ge=0)
     numberMatched: Optional[int] = Field(None, ge=0)
     timeStamp: Optional[str] = None
