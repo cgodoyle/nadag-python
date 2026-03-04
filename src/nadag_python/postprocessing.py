@@ -75,6 +75,11 @@ def add_empty_soundings(investigations, soundings_info) -> pd.DataFrame:
     )
 
     if not empty_methods_df.empty:
+        if soundings_info is None or soundings_info.empty:
+            empty_methods_df = empty_methods_df.astype(
+                {col: soundings_info[col].dtype for col in empty_methods_df.columns if col in soundings_info.columns},
+                errors="ignore",
+            )
         soundings_info_out = pd.concat([empty_methods_df, soundings_info], ignore_index=True).reset_index(drop=True)
         logger.debug(f"Added {len(empty_methods_df)} empty soundings to soundings_info.")
     else:

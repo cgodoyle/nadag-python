@@ -96,7 +96,7 @@ async def get_features_in_bbox(
     if n_cols > 1 or n_rows > 1:
         logger.info(
             f"Max. distance for query is set to {max_dist_query} m. Splitting bounding box into {n_rows} rows and "
-            "{n_cols} columns for collection {collection}"
+            f"{n_cols} columns for collection {collection}"
         )
     sub_boxes = split_bbox(
         gpd.GeoDataFrame(geometry=[box(*bbox)], crs=settings.DEFAULT_CRS),
@@ -119,49 +119,6 @@ async def get_features_in_bbox(
 
     response_list = [item for item in response_list if isinstance(item, PaginatedResponse) and len(item) > 0]
     return PaginatedResponse.merge(response_list)
-
-
-async def fetch_from_location_ids(location_ids: list[str]) -> NadagData:
-    """
-    Fetch data from the NADAG API for a given list of location IDs.
-
-    Args:
-        location_ids (list[str]): A list of location IDs to fetch data for.
-    Returns:
-        NadagData: A NadagData object containing the fetched data for the given location ID.
-    """
-
-    nadag_client = NadagHTTPClient()
-
-    href_list = [nadag_client.build_collection_url(collection="geotekniskborehull") + f"/{lid}" for lid in location_ids]
-    resp = await nadag_client.get_href_list(href_list)
-
-    locations = pd.concat(
-        [
-            PaginatedResponse(
-                type="FeatureCollection",
-                features=[rr],
-                numberReturned=len(rr) if isinstance(rr, dict) else 1,
-                numberMatched=len(rr) if isinstance(rr, dict) else 1,
-                timeStamp=None,
-            ).to_gdf()
-            for rr in resp
-        ]
-    )
-    locations = locations.set_crs(settings.API_CRS, allow_override=True).to_crs(settings.DEFAULT_CRS)
-    href_list = [
-        nadag_client.build_collection_url(collection="geotekniskborehullunders", query_params={"underspkt_fk": lid})
-        for lid in location_ids
-    ]
-    resp = await nadag_client.get_href_list(href_list)
-    investigations = pd.concat([PaginatedResponse(**rr).to_gdf() for rr in resp])
-    investigations = investigations.set_crs(settings.API_CRS, allow_override=True).to_crs(settings.DEFAULT_CRS)
-
-    temp_data = NadagData(bounds=locations.total_bounds, locations=locations, investigations=investigations)
-
-    temp_data = await get_method_and_sample_nadag_data(nadag_client, temp_data)
-
-    return temp_data
 
 
 async def get_soundings_data_raw(
@@ -455,6 +412,49 @@ async def fetch_from_bounds(
     )
 
     temp_data = await get_method_and_sample_nadag_data(http_client, temp_data)
+    return temp_data
+
+
+async def fetch_from_location_ids(location_ids: list[str]) -> NadagData:
+    """
+    Fetch data from the NADAG API for a given list of location IDs.
+
+    Args:
+        location_ids (list[str]): A list of location IDs to fetch data for.
+    Returns:
+        NadagData: A NadagData object containing the fetched data for the given location ID.
+    """
+
+    nadag_client = NadagHTTPClient()
+
+    href_list = [nadag_client.build_collection_url(collection="geotekniskborehull") + f"/{lid}" for lid in location_ids]
+    resp = await nadag_client.get_href_list(href_list)
+
+    locations = pd.concat(
+        [
+            PaginatedResponse(
+                type="FeatureCollection",
+                features=[rr],
+                numberReturned=len(rr) if isinstance(rr, dict) else 1,
+                numberMatched=len(rr) if isinstance(rr, dict) else 1,
+                timeStamp=None,
+            ).to_gdf()
+            for rr in resp
+        ]
+    )
+    locations = locations.set_crs(settings.API_CRS, allow_override=True).to_crs(settings.DEFAULT_CRS)
+    href_list = [
+        nadag_client.build_collection_url(collection="geotekniskborehullunders", query_params={"underspkt_fk": lid})
+        for lid in location_ids
+    ]
+    resp = await nadag_client.get_href_list(href_list)
+    investigations = pd.concat([PaginatedResponse(**rr).to_gdf() for rr in resp])
+    investigations = investigations.set_crs(settings.API_CRS, allow_override=True).to_crs(settings.DEFAULT_CRS)
+
+    temp_data = NadagData(bounds=locations.total_bounds, locations=locations, investigations=investigations)
+
+    temp_data = await get_method_and_sample_nadag_data(nadag_client, temp_data)
+
     return temp_data
 
 

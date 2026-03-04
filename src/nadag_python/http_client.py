@@ -20,10 +20,10 @@ from .logging import get_module_logger
 from .utils import clean_url
 
 TIMEOUT = httpx.Timeout(
-    connect=10.0,
+    connect=settings.API_TIMEOUT,
     read=settings.API_TIMEOUT,
+    pool=60.0,
     write=10.0,
-    pool=10.0,
 )
 
 logger = get_module_logger(__name__)
@@ -40,7 +40,18 @@ def api_retry(
     return retry(
         stop=stop_after_attempt(max_attempts),
         wait=wait_exponential(multiplier=1, min=wait_min, max=wait_max),
-        retry=retry_if_exception_type((ConnectionError, TimeoutError)),
+        retry=retry_if_exception_type(
+            (
+                ConnectionError,
+                TimeoutError,
+                httpx.ConnectTimeout,
+                httpx.ReadTimeout,
+                httpx.WriteTimeout,
+                httpx.PoolTimeout,
+                httpx.ConnectError,
+                httpx.RemoteProtocolError,
+            )
+        ),
         before_sleep=before_sleep_log(logger, logging.WARNING),
     )
 
