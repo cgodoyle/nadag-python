@@ -42,7 +42,7 @@ def add_empty_soundings(investigations, soundings_info) -> pd.DataFrame:
             pd.DataFrame: The updated soundings_info DataFrame with empty soundings added.
     """
 
-    method_keys = [xx.metode_key for xx in FIELD.methods]
+    method_keys = [xx.metode_key for xx in FIELD.methods] + [FIELD.sample.metode_key]
 
     investigations_with_no_data = investigations[
         ~investigations.apply(
@@ -51,7 +51,7 @@ def add_empty_soundings(investigations, soundings_info) -> pd.DataFrame:
         )
     ]
     if investigations_with_no_data.empty:
-        return pd.DataFrame()
+        return soundings_info
     logger.debug(
         f"Found {len(investigations_with_no_data)} investigations with no method data. Adding empty soundings for these investigations."
     )
@@ -480,7 +480,10 @@ def export_methods_to_gdf(nadag_data: NadagData) -> GeoDataFrameType:
     """
 
     methods = gpd.GeoDataFrame(
-        [nadag_data.query_method(method_id=mm) for mm in nadag_data.methods_info["method_id"].unique()]
+        [
+            nadag_data.query_method(method_id=mm)
+            for mm in nadag_data.methods_info[MethodDataFrame.method_id.name].unique()
+        ]
     )
 
     methods = methods.rename(columns=GrundigMethodDataFrame.column_mapper())
@@ -497,6 +500,18 @@ def export_methods_to_gdf(nadag_data: NadagData) -> GeoDataFrameType:
         MethodsConfig.GEOTEKNISKMETODE_TO_METHOD_TYPE_MAPPER
     )
 
+    # ----------------------------------------------------------------------------------------------
+    # adding flagged columns for hammering, increased rotation rate and flushing based on comment codes for tot data
+    def apply_intervals_if_tot(method_type, data):
+        if method_type == FIELD.tot.name and data is not None and not data.empty:
+            intervals = create_intervals_from_comments(data)
+            return data.join(intervals.drop(columns=data.columns, errors="ignore"))
+        return data
+
+    methods[MethodDataFrame.data.name] = [
+        apply_intervals_if_tot(row[MethodDataFrame.method_type.name], row[MethodDataFrame.data.name])
+        for _, row in methods.iterrows()
+    ]
     # ----------------------------------------------------------------------------------------------
 
     cols_to_drop = [col for col in methods.columns if col not in GrundigMethodDataFrame.fields()]
