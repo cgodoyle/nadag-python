@@ -1,5 +1,6 @@
 ---
-icon: simple/markdown
+search:
+  exclude: true
 ---
 
 # Markdown in 5min

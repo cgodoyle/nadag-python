@@ -126,7 +126,7 @@ async def fetch_from_location_ids(location_ids: list[str]) -> NadagData:
     Fetch data from the NADAG API for a given list of location IDs.
 
     Args:
-        loc_ids (list[str]): A list of location IDs to fetch data for.
+        location_ids (list[str]): A list of location IDs to fetch data for.
     Returns:
         NadagData: A NadagData object containing the fetched data for the given location ID.
     """

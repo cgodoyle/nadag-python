@@ -4,34 +4,6 @@ icon: material/api
 
 # Library documentation
 
-## HTTP client (nadag_python.http_client)
-Client for making HTTP requests to the NADAG API, handling pagination, rate limiting, and retries.
-
-::: nadag_python.http_client
-
-## NADAG functions (nadag_python.nadag_functions)
-Functions for fetching and processing data from the NADAG API, including functions for retrieving investigations, locations, methods, and test series data, as well as functions for post-processing and structuring the data into a more usable format. (:thinking:)
-
-::: nadag_python.nadag_functions
-
-## Postprocessing functions (nadag_python.postprocessing)
-Functions for post-processing the raw data retrieved from the NADAG API, including functions for cleaning, structuring, and simplifying the data, as well as functions for exporting the data to a structured GeoDataFrame format similar to NVE's Grundig / Field Manager structure. (:thinking:)
-
-::: nadag_python.postprocessing
-
-
-## Utility functions (nadag_python.utils)
-Utility functions for various tasks such as logging, configuration management, and other helper functions used throughout the library.
-
-::: nadag_python.utils
-
-<!-- Not sure if this should be included, we must anyways make a page explaining the data model. -->
-## Data models (nadag_python.data_models)
-Data models for representing the geotechnical data retrieved from the NADAG API, including dataclasses for investigations, locations, methods, test series, and aggregated test series data. 
-It also includes field definitions and type annotations for the data, as well as functions for converting raw API responses into structured data models (:thinking:).
-
-::: nadag_python.data_models
-
 
 ## Configuration (nadag_python.config)
 Configuration management for the library, including functions for loading and managing configuration settings such as API endpoints and parameters, 
@@ -41,21 +13,32 @@ Configuration associated with functional aspects of the library as mappers, filt
 
 ### Environment variables
 ```bash
-LOG_LEVEL = "DEBUG"
-API_BASE_URL = "https://geo.ngu.no/api/features/grunnundersokelser_utvidet/collections"
-API_FAKTAARK_URL = "https://geo.ngu.no/api/faktaark/nadag/visGeotekniskBorehull.php"
-API_TIMEOUT = 300
-API_DATA_LIMIT = 10000  # Default limit for soundings data fetching
-API_RETRY_ATTEMPTS = 3
-API_RETRY_MIN_WAIT = 1  # seconds
-API_RETRY_MAX_WAIT = 10  # seconds
-API_MAX_CONCURRENCY = 50
-API_MAX_DIST_QUERY = 500  # Default max distance for query in meters
-API_CRS = 4326
-DEFAULT_CRS = 25833
-NADAG_TOML_PATH = "nadag.toml"
+LOG_LEVEL: str = "ERROR"
+
+API_BASE_URL: str = "https://geo.ngu.no/api/features/grunnundersokelser_utvidet/collections"
+API_FAKTAARK_URL: str = "https://geo.ngu.no/api/faktaark/nadag/visGeotekniskBorehull.php"
+
+API_TIMEOUT: int = 500
+API_RETRY_ATTEMPTS: int = 3
+API_RETRY_MIN_WAIT: int = 1  # seconds
+API_RETRY_MAX_WAIT: int = 10  # seconds
+API_MAX_CONCURRENCY: int = 50
+API_MAX_DIST_QUERY: int = 2_000  # Default max distance for query in meters
+
+API_CRS: int = 4326
+DEFAULT_CRS: int = 25833
+
+NADAG_TOML_PATH: str = "nadag.toml"
 
 ```
+
+The environment variables can be set in a `.env` file at the project root, which will be automatically loaded by the `pydantic-settings` model when the library is initialized. It assumes a prefix env_prefix="NADAG_PYTHON_", so the variables should be defined with this prefix in the .env file or in the system environment, for example:
+```bash
+NADAG_PYTHON_LOG_LEVEL=DEBUG
+NADAG_PYTHON_API_BASE_URL=https://custom.api.url/endpoint
+NADAG_PYTHON_API_TIMEOUT=1000
+```
+
 ### Nadag TOML configuration file
 ```toml
 [methods.mapper] 
@@ -110,3 +93,33 @@ NADAG_TOML_PATH = "nadag.toml"
     other          = "other"
     nothing        = "nothing"
 ```
+
+
+## HTTP client (nadag_python.http_client)
+Client for making HTTP requests to the NADAG API, handling pagination, rate limiting, and retries.
+
+::: nadag_python.http_client
+
+## NADAG functions (nadag_python.nadag_functions)
+Functions for fetching and processing data from the NADAG API, including functions for retrieving investigations, locations, methods, and test series data, as well as functions for post-processing and structuring the data into a more usable format. (:thinking:)
+
+::: nadag_python.nadag_functions
+
+## Postprocessing functions (nadag_python.postprocessing)
+Functions for post-processing the raw data retrieved from the NADAG API, including functions for cleaning, structuring, and simplifying the data, as well as functions for exporting the data to a structured GeoDataFrame format similar to NVE's Grundig / Field Manager structure. (:thinking:)
+
+::: nadag_python.postprocessing
+
+
+## Utility functions (nadag_python.utils)
+Utility functions for various tasks such as logging, configuration management, and other helper functions used throughout the library.
+
+::: nadag_python.utils
+
+<!-- Not sure if this should be included, we must anyways make a page explaining the data model. -->
+## Data models (nadag_python.data_models)
+Data models for representing the geotechnical data retrieved from the NADAG API, including dataclasses for investigations, locations, methods, test series, and aggregated test series data. 
+It also includes field definitions and type annotations for the data, as well as functions for converting raw API responses into structured data models (:thinking:).
+
+::: nadag_python.data_models
+

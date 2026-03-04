@@ -3,6 +3,7 @@ from copy import deepcopy
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+from matplotlib.axes import Axes
 
 from .data_models import (
     FIELD,
@@ -552,7 +553,7 @@ def plot_nadag_data(
     markersize_samples: int = 30,
     round_to: int = 100,
     percent_margin: float = 0.1,
-):
+) -> Axes:
     """
     Quick and simple plotting of boreholes and samples from nadag data. Mainly for quick visualization in notebooks.
 
@@ -564,7 +565,7 @@ def plot_nadag_data(
         percent_margin (float): The percentage margin to add to the plot limits. Default is 0.1 (10%).
 
     Returns:
-        matplotlib.axes.Axes: The axes object containing the plot of boreholes and samples.
+        Axes: The axes object containing the plot of boreholes and samples.
 
     """
 

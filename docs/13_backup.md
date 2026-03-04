@@ -1,5 +1,6 @@
 ---
-icon: lucide/archive
+search:
+  exclude: true
 ---
 
 # Zensical Reference
