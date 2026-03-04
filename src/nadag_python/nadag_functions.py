@@ -130,11 +130,6 @@ async def fetch_from_location_ids(location_ids: list[str]) -> NadagData:
     Returns:
         NadagData: A NadagData object containing the fetched data for the given location ID.
     """
-    import pandas as pd
-
-    from nadag_python.config import settings
-    from nadag_python.data_models import NadagData, PaginatedResponse
-    from nadag_python.http_client import NadagHTTPClient
 
     nadag_client = NadagHTTPClient()
 
@@ -146,8 +141,8 @@ async def fetch_from_location_ids(location_ids: list[str]) -> NadagData:
             PaginatedResponse(
                 type="FeatureCollection",
                 features=[rr],
-                numberReturned=len(rr["features"]) if isinstance(rr, dict) else 1,
-                numberMatched=len(rr["features"]) if isinstance(rr, dict) else 1,
+                numberReturned=len(rr) if isinstance(rr, dict) else 1,
+                numberMatched=len(rr) if isinstance(rr, dict) else 1,
                 timeStamp=None,
             ).to_gdf()
             for rr in resp
