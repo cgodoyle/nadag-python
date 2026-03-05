@@ -168,7 +168,9 @@ async def get_soundings_data_raw(
         )
 
     responses = []
+    logger.debug(f"{len(urls)} methods found in GBHU.")
     for url_group in urls:
+        logger.debug(f"fetching {len(url_group)} urls in group")
         group_responses = []
         async for feature in http_client.get_features_from_urls_stream(url_group):
             group_responses.append(feature)
@@ -315,10 +317,18 @@ async def get_method_and_sample_nadag_data(http_client: NadagHTTPClient, temp_da
 
     """
     logger.info("Fetching soundings & test data...")
-    (soundings_info_pre, soundings_data_pre), test_series = await asyncio.gather(
-        get_soundings_data_raw(http_client, temp_data),
-        get_test_series(http_client, temp_data),
-    )
+    try:
+        (soundings_info_pre, soundings_data_pre), test_series = await asyncio.gather(
+            get_soundings_data_raw(http_client, temp_data),
+            get_test_series(http_client, temp_data),
+        )
+    except RuntimeError as e:
+        logger.error(f"Failed to fetch complete data: {e}")
+        raise RuntimeError(
+            f"Could not fetch complete sounding/sample data. "
+            f"Try reducing the bounding box area or increasing API_RETRY_ATTEMPTS. "
+            f"Original error: {e}"
+        ) from e
 
     soundings_info, soundings_data = postprocess_methods_data_and_info(soundings_info_pre, soundings_data_pre)
 

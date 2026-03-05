@@ -26,6 +26,8 @@ TIMEOUT = httpx.Timeout(
     write=10.0,
 )
 
+DEFAULT_CHUNK_SIZE = settings.API_MAX_CONCURRENCY
+
 logger = get_module_logger(__name__)
 
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -130,17 +132,48 @@ class NadagHTTPClient:
                 response.raise_for_status()
                 return response.json()
 
-    async def get_features_from_urls(self, urls: list[str]) -> list[dict]:
+    async def get_features_from_urls(self, urls: list[str], chunk_size: int = DEFAULT_CHUNK_SIZE) -> list[dict]:
         """
-        Fetch features from a list of URLs asynchronously.
+        Fetch features from a list of URLs asynchronously in chunks to avoid server saturation.
+        Raises an error if any URL fails after retries.
+
         Args:
             urls (list[str]): A list of URLs to fetch features from.
+            chunk_size (int): Number of concurrent requests per chunk.
         Returns:
             list[dict]: A list of JSON responses containing the feature data.
-
+        Raises:
+            RuntimeError: If any URLs fail after all retry attempts.
         """
-        tasks = [self.get_feature(url) for url in urls]
-        return await asyncio.gather(*tasks)
+        all_results = []
+        failed_urls = []
+
+        for i in range(0, len(urls), chunk_size):
+            chunk = urls[i : i + chunk_size]
+            logger.debug(f"Fetching chunk {i // chunk_size + 1}/{-(-len(urls) // chunk_size)} ({len(chunk)} URLs)")
+
+            results = await asyncio.gather(
+                *[self.get_feature(url) for url in chunk],
+                return_exceptions=True,
+            )
+
+            for j, result in enumerate(results):
+                if isinstance(result, Exception):
+                    failed_urls.append((chunk[j], result))
+                else:
+                    all_results.append(result)
+
+        if failed_urls:
+            logger.warning(
+                f"{len(failed_urls)}/{len(urls)} URLs failed after retries. "
+                f"First failure: {failed_urls[0][0]} -> {failed_urls[0][1]}"
+            )
+            raise RuntimeError(
+                f"{len(failed_urls)}/{len(urls)} URL requests failed after retries. "
+                f"Failed URLs: {[url for url, _ in failed_urls[:5]]}{'...' if len(failed_urls) > 5 else ''}"
+            )
+
+        return all_results
 
     async def get_features_from_urls_stream(self, urls: list[str]):
         """
@@ -150,20 +183,24 @@ class NadagHTTPClient:
         Yields:
             dict: The JSON response containing the feature data.
         """
-        async with self.semaphore:
-            async with httpx.AsyncClient(timeout=TIMEOUT) as client:
 
-                async def fetch(url):
-                    response = await client.get(clean_url(url))
-                    response.raise_for_status()
-                    return response.json()
+        @api_retry()
+        async def fetch(client: httpx.AsyncClient, url: str):
+            async with self.semaphore:
+                response = await client.get(clean_url(url))
+                response.raise_for_status()
+                return response.json()
 
-                tasks = [fetch(url) for url in urls]
-                for coro in asyncio.as_completed(tasks):
+        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            tasks = [fetch(client, url) for url in urls]
+            for coro in asyncio.as_completed(tasks):
+                try:
                     result = await coro
                     yield result
+                except Exception as e:
+                    logger.error(f"Failed to fetch URL after retries: {e}")
+                    continue
 
-    @api_retry()
     async def get_features_paginated(
         self,
         url: str,
@@ -172,13 +209,6 @@ class NadagHTTPClient:
     ) -> AsyncGenerator[PaginatedResponse, None]:
         """
         Fetch features from a collection in a paginated manner.
-        Args:
-            url (str): The URL of the collection to fetch features from.
-            params (Optional[dict]): Query parameters for the request.
-            page_size (int): The number of items to fetch per page.
-        Yields:
-            PaginatedResponse: A paginated response containing the features.
-
         """
         logger.debug(f"API endpoint: {url}")
         params = params or {}
@@ -191,33 +221,37 @@ class NadagHTTPClient:
                 while next_url:
                     current_params = params if first_page else None
                     first_page = False
-                    response = await client.get(next_url, params=current_params)
-                    response.raise_for_status()
-                    data = response.json()
+
+                    data = await self._fetch_page(client, next_url, current_params)
                     yield PaginatedResponse(**data)
 
                     next_link = next(
                         (link["href"] for link in data.get("links", []) if link.get("rel") == "next"),
                         None,
                     )
-                    if next_link:
-                        next_url = next_link
-                        params = {}  # limpiar params después de la primera iteración
-                    else:
-                        next_url = None
+                    next_url = next_link if next_link else None
+
+    @api_retry()
+    async def _fetch_page(self, client: httpx.AsyncClient, url: str, params: Optional[dict] = None) -> dict:
+        """Fetch a single page with retry support."""
+        response = await client.get(url, params=params)
+        response.raise_for_status()
+        return response.json()
 
     @api_retry()
     async def _get_async(self, href: str, params: dict | None = None) -> dict | None:
         """
-        Optimized version of get_async that automatically handles pagination.
-        It's compatible with the original function signature to facilitate substitution.
+        Fetch a single URL and handle pagination if necessary.
+        This method is used internally by get_href_list to fetch each URL in the list, and it will handle pagination
+        if the response includes a "next" link.
 
         Args:
-            href (str): URL for the request
-            params (dict): Query parameters for the request
+            href (str): The URL to fetch.
+            params (dict | None): Optional query parameters for the initial request.
 
         Returns:
-            dict: Combined data from all pages
+            dict | None: The JSON response containing the feature data, or None if the URL is invalid.
+
         """
         if href is None:
             return None
@@ -226,40 +260,36 @@ class NadagHTTPClient:
         next_url = href
         first_page = True
 
-        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-            while next_url:
-                # Use parameters only in the first request
-                current_params = params if first_page else None
-                first_page = False
+        async with self.semaphore:
+            async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+                while next_url:
+                    current_params = params if first_page else None
+                    first_page = False
 
-                try:
-                    response = await client.get(next_url, params=current_params)
-                    response.raise_for_status()  # Check for HTTP errors
-                    data = response.json()
+                    try:
+                        response = await client.get(next_url, params=current_params)
+                        response.raise_for_status()
+                        data = response.json()
 
-                    # Extract features from the current page
-                    if "features" in data and data["features"]:
-                        all_features.extend(data["features"])
+                        if "features" in data and data["features"]:
+                            all_features.extend(data["features"])
 
-                    # Look for the "next" link for the next page
-                    next_url = None
-                    if "links" in data:
-                        for link in data["links"]:
-                            if link.get("rel") == "next":
-                                next_url = link.get("href")
-                                break
+                        next_url = None
+                        if "links" in data:
+                            for link in data["links"]:
+                                if link.get("rel") == "next":
+                                    next_url = link.get("href")
+                                    break
 
-                except httpx.HTTPError as e:
-                    logger.error(f"HTTP error fetching {next_url}: {e}")
-                    raise
+                    except httpx.HTTPError as e:
+                        logger.error(f"HTTP error fetching {next_url}: {e}")
+                        raise
 
-                except Exception as e:
-                    logger.error(f"Unexpected error: {e}")
-                    raise
+                    except Exception as e:
+                        logger.error(f"Unexpected error: {e}")
+                        raise
 
-        # Create a combined response with all features
         if all_features:
-            # Maintain the structure of the original response
             result = data.copy()
             result["features"] = all_features
             result["numberMatched"] = len(all_features)
@@ -268,35 +298,62 @@ class NadagHTTPClient:
         else:
             return data
 
-    async def get_href_list(self, href_list: list[str]) -> list[dict]:
+    async def get_href_list(self, href_list: list[str], chunk_size: int = DEFAULT_CHUNK_SIZE) -> list[dict]:
         """
-        Fetch a list of URLs asynchronously.
+        Fetch a list of URLs asynchronously in chunks.
+        Raises an error if any URL fails after retries.
+
         Args:
             href_list (list[str]): A list of URLs to fetch.
+            chunk_size (int): Number of concurrent requests per chunk.
         Returns:
             list[dict]: A list of JSON responses containing the feature data.
+        Raises:
+            RuntimeError: If any URLs fail after all retry attempts.
         """
-        return await asyncio.gather(*[self._get_async(href) for href in href_list])
+        all_results = []
+        failed_urls = []
+
+        for i in range(0, len(href_list), chunk_size):
+            chunk = href_list[i : i + chunk_size]
+            logger.debug(
+                f"Fetching href chunk {i // chunk_size + 1}/{-(-len(href_list) // chunk_size)} ({len(chunk)} URLs)"
+            )
+
+            results = await asyncio.gather(
+                *[self._get_async(href) for href in chunk],
+                return_exceptions=True,
+            )
+
+            for j, result in enumerate(results):
+                if isinstance(result, Exception):
+                    failed_urls.append((chunk[j], result))
+                else:
+                    all_results.append(result)
+
+        if failed_urls:
+            raise RuntimeError(
+                f"{len(failed_urls)}/{len(href_list)} href requests failed after retries. "
+                f"Failed URLs: {[url for url, _ in failed_urls[:5]]}{'...' if len(failed_urls) > 5 else ''}"
+            )
+
+        return all_results
 
     @staticmethod
     def process_api_responses(response_list: list[dict]) -> list[list[dict]]:
         """
         Process a list of API responses to extract feature properties.
-        Args:
-            response_list (list[dict]): A list of API responses.
-        Returns:
-            list[list[dict]]: A list of lists containing feature properties.
         """
         properties = []
         for feature_dict in response_list:
+            if feature_dict is None or "features" not in feature_dict:
+                logger.warning("Skipping invalid or empty API response.")
+                continue
             feature_list = feature_dict["features"]
             feature_properties = []
             for item in feature_list:
                 item_properties = item["properties"]
-
-                item_properties[FIELD.feature_id] = item["id"]  # need to check if this works outside processing samples
-                # i needed bc it does not come with a identifikasjon.lokalId in the properties, but it is needed for processing samples
-
+                item_properties[FIELD.feature_id] = item["id"]
                 feature_properties.append(item_properties)
 
             properties.append(feature_properties)
