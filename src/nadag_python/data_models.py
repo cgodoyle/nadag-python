@@ -339,7 +339,7 @@ class NadagData:
             MethodDataFrame.gbhu_id.name                 : gbhu_id,
             MethodDataFrame.location_name.name           : loc.get(MethodDataFrame.location_name.value, "Unknown"),
             MethodDataFrame.location_id.name             : location_id,
-            MethodDataFrame.depth.name                   : inv.get(MethodDataFrame.depth.value),
+            MethodDataFrame.depth.name                   : loc.get(MethodDataFrame.depth.value),
             MethodDataFrame.stop_code.name               : inv.get(MethodDataFrame.stop_code.value),
             MethodDataFrame.date_investigation_start.name: inv.get(MethodDataFrame.date_investigation_start.value),
             MethodDataFrame.date_adquisition.name        : loc.get(MethodDataFrame.date_adquisition.value),
@@ -530,7 +530,7 @@ class MethodDataFrame(ModelEnum):
     gbhu_id = FIELD.model_gbhu_id
     investigation_area_id = "opprinneligGeotekniskUndersID"
     location_name = "boreNr"
-    depth = "boretLengde"
+    depth = "maksBoretLengde"
     method_type = "method_type"
     method_type_nadag = "geotekniskMetode"
     stop_code = "stoppKode"
