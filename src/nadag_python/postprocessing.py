@@ -51,11 +51,13 @@ def add_empty_soundings(investigations, soundings_info) -> pd.DataFrame:
             axis=1,
         )
     ]
+
+    valid_methods = tuple(MethodsConfig.SOUNDINGS_FILTER)
+    investigation_method_field = MethodDataFrame.method_type_nadag.value
+    investigations_with_no_data = investigations_with_no_data.query(f"{investigation_method_field} in {valid_methods}")
+
     if investigations_with_no_data.empty:
         return soundings_info
-    logger.debug(
-        f"Found {len(investigations_with_no_data)} investigations with no method data. Adding empty soundings for these investigations."
-    )
     empty_methods_df = pd.DataFrame(
         [
             {
