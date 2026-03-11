@@ -5,11 +5,14 @@ import numpy as np
 import pandas as pd
 from matplotlib.axes import Axes
 
+from nadag_python.utils import normalize_columns
+
 from .data_models import (
     FIELD,
     GeoDataFrameType,
     GrundigMethodDataFrame,
     GrundigSampleDataFrame,
+    MethodDataDataFrame,
     MethodDataFrame,
     MethodsConfig,
     NadagData,
@@ -117,6 +120,7 @@ def postprocess_methods_data_and_info(
 
         method_data = soundings_data.get(method_type)
         method_info = soundings_info.get(method_type)
+
         if method_info is None:
             logger.debug(f"No method info found for type: {method_type}")
             continue
@@ -141,6 +145,7 @@ def postprocess_methods_data_and_info(
             continue
 
         method_data[MethodDataFrame.method_id.name] = method_data[method_nadag_id.replace("href", "title")]
+
         method_data = method_data.drop(columns=[method_nadag_id, FIELD.get_method_by_type(method_type).api_name])
 
         if method_type == FIELD.cpt.name:
@@ -148,7 +153,13 @@ def postprocess_methods_data_and_info(
             method_info[MethodDataFrame.cpt_info.name] = cpt_info_dict
             method_info = method_info.drop(columns=MethodsConfig.CPT_INFO_COLUMNS)
 
-        new_data.append(method_data)
+        # TODO: check if we need to always normalize, or maybe do it in other places due to Nadag naming inconsistencies across method types
+        method_data_normalized = normalize_columns(
+            df=method_data,
+            canonical_columns=MethodDataDataFrame.nadag_fields(),
+        )
+
+        new_data.append(method_data_normalized)
         new_info.append(method_info)
 
     if len(new_data) == 0:
@@ -156,6 +167,8 @@ def postprocess_methods_data_and_info(
         new_data_df = pd.DataFrame()
     else:
         new_data_df = pd.concat(new_data, ignore_index=True).reset_index(drop=True)
+
+    logger.debug(new_data_df)
 
     if len(new_info) == 0:
         logger.warning("No method info found for any method type. Returning empty DataFrames.")

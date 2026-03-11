@@ -633,6 +633,10 @@ class MethodDataDataFrame(ModelEnum):
     def fields(cls):
         return [kk.name for kk in cls] + ["method_id"]
 
+    @classmethod
+    def nadag_fields(cls):
+        return [kk.value for kk in cls] + ["method_id"]
+
 
 class SampleDataFrame(ModelEnum):
     location_id = "underspkt_fk"

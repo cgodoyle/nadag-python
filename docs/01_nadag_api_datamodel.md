@@ -54,3 +54,7 @@ F --> I
 I["**NadagData**(dataclass)<br/><br/><small>(Geo)Dataframes with:</small><br/><code>•investigations<br/>•locations<br/>•methods_info<br/>•methods_data<br/>•sample_series<br/>•sample_series_aggregated</code><br/>"]
 
 ```
+
+> **Important note**: Sometimes columns representing "the same" kind of data have inconsisten naming across different method types. For example, the penetration force is represented in `metode-KombinasjonSondering` and `metode-TrykkSondering` as `anvendtLast`, while in `metode-StatiskSondering` it is represented as `anvendtlast`. This can lead to confusion and difficulties when trying to analyze the data, since it requires additional steps to standardize the column names across different method types. It would be ideal if the NADAG API had a more consistent naming convention for columns representing similar data across different method types. 
+> 
+> **Question for the NADAG team**: WHYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY?! :sob:

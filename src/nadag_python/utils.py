@@ -7,6 +7,36 @@ from shapely.geometry import box
 from .data_models import BoundingBox
 
 
+def normalize_columns(df: pd.DataFrame, canonical_columns: list[str]) -> pd.DataFrame:
+    """
+    Normalize column names in a DataFrame to match a list of canonical column names, ignoring case.
+    This function takes a DataFrame and a list of canonical column names, and renames the columns in the
+    DataFrame to match the canonical names, ignoring case differences. If a column in the DataFrame does not
+    match any of the canonical names (ignoring case), it will be left unchanged.
+
+    Args:
+        df (pd.DataFrame): The DataFrame whose columns are to be normalized.
+        canonical_columns (list[str]): A list of canonical column names to match against.
+
+    Returns:
+        pd.DataFrame: A new DataFrame with columns renamed to match the canonical names, ignoring case.
+
+    """
+    # Crear un mapeo: nombre_lowercase -> nombre_canónico
+    canonical_map = {col.lower(): col for col in canonical_columns}
+
+    rename_map = {}
+    for col in df.columns:
+        col_lower = col.lower()
+        if col_lower in canonical_map and col != canonical_map[col_lower]:
+            rename_map[col] = canonical_map[col_lower]
+
+    if rename_map:
+        df = df.rename(columns=rename_map)
+
+    return df
+
+
 def clean_url(url: str) -> str:
     """
     Clean a URL by removing duplicate slashes, except for the protocol part.
