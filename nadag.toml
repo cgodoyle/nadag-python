@@ -58,6 +58,13 @@
 "increased_rotation_rate_ends"      = ["52"]
 "flushing_starts"                   = ["14", "63"]
 "flushing_ends"                     = ["62", "64"]
+
+[methods.rock_stop_codes]
+"rock_stop_code"                    = "54"
+"intepreted_rock_code"              = "93"
+"depth_to_rock_code"                = "94"
+"rock_more_3_meters_code"           = "98"
+
 # 1 ForrigeKodeFeil
 # 2 Startnivå
 # 3 NyMetode

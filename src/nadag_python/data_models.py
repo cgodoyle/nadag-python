@@ -508,6 +508,7 @@ class MethodsConfig:
     GEOTEKNISKMETODE_TO_METHOD_TYPE_MAPPER = nadag_config.methods.mapper
     SOUNDINGS_FILTER = GEOTEKNISKMETODE_TO_METHOD_TYPE_MAPPER.keys()
     NADAG_FLAG_CODES = nadag_config.methods.flag_codes
+    NADAG_ROCK_STOP_CODES = nadag_config.methods.rock_stop_codes
 
 
 class SamplesConfig:

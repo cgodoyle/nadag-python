@@ -15,6 +15,7 @@ class MethodConfigModel(BaseModel):
     mapper: dict[str, str] = Field(default_factory=dict)
     flag_codes: dict[str, list[str]] = Field(default_factory=dict)
     cpt_info_columns: list[str] = Field(default_factory=list)
+    rock_stop_codes: dict[str, str] = Field(default_factory=dict)
 
 
 class SampleConfigModel(BaseModel):

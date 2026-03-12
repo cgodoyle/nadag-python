@@ -620,3 +620,121 @@ def plot_nadag_data(
     ax.set_ylim(ymin, ymax)
     # _ = ax.legend()
     return ax
+
+
+#########################################################################################################################
+##### Post processing of the depth to bedrock data
+#########################################################################################################################
+
+
+def _process_code(x: str | list | float | int | None) -> list[str]:
+    """
+    Helper function to process the comment_code field in the borehole data.
+    It handles different data types and formats to extract the relevant codes as a list of strings.
+
+    Args:
+        x: The input value from the comment_code field, which can be of various types (string, list, numeric, or NaN).
+
+    Returns:
+        list: A list of strings representing the processed comment codes extracted from the input value.
+
+    """
+    if isinstance(x, str):
+        return x.split(" ")
+    elif isinstance(x, list):
+        return [str(ii) for ii in x]
+    elif pd.isna(x):
+        return []
+    elif isinstance(x, (int, float)):
+        return [str(int(x))]
+    else:
+        return []
+
+
+def nadag_find_comment_code(bh_data: pd.DataFrame, code: int) -> list[float]:
+    """
+    Find the depth of a specific comment code in the borehole data.
+    Args:
+        bh_data (pd.DataFrame): DataFrame containing borehole data with 'comment_code' and 'depth' columns.
+        code (int): The comment code to search for.
+    Returns:
+        list: A list of floats representing the depths corresponding to the comment code, or an empty list if not found.
+    """
+    if (
+        bh_data.empty
+        or MethodDataDataFrame.comment_code.name not in bh_data
+        or MethodDataDataFrame.depth.name not in bh_data
+    ):
+        return []
+    depth_slice = bh_data[MethodDataDataFrame.comment_code.name].apply(_process_code).apply(lambda x: str(code) in x)
+    if depth_slice.empty:
+        return []
+    else:
+        depth = bh_data.loc[depth_slice, MethodDataDataFrame.depth.name]
+        if depth is None or depth.empty:
+            return []
+        else:
+            depth_list = depth.astype(float).values.tolist()
+            if len(depth_list) == 0:
+                return []
+            else:
+                return depth_list
+
+
+def nadag_get_actual_depth_to_rock_dict(
+    bh_data: pd.DataFrame,
+) -> tuple[dict[str, float | None], dict[str, list[float]]]:
+    """
+    Determines the actual depth to rock based on the borehole data and specific comment codes related to rock conditions.
+    The function checks for the presence of specific comment codes in the borehole data that indicate rock conditions,
+    such as the presence of rock, interpreted rock, depth to rock, and whether the rock is more than 3 meters thick.
+    It then calculates the actual depth to rock and its quality based on the depth of the rock code and the maximum
+    depth of the borehole. The function returns a dictionary containing the actual depth to rock, its quality,
+    and any other relevant comment codes found in the borehole data.
+
+    Args:
+        bh_data (pd.DataFrame): A DataFrame containing borehole data, including depth and comment codes.
+
+    Returns:
+        tuple: A tuple containing two dictionaries. The first dictionary contains the actual depth to rock, its quality,
+               and other relevant comment codes found in the borehole data. The keys include 'actual_depth', 'actual_quality',
+               and 'other_codes' which is itself a dictionary of specific comment codes related to rock conditions. The second
+               dictionary contains the other relevant comment codes found in the borehole data.
+    """
+    nadag_rock_codes = MethodsConfig.NADAG_ROCK_STOP_CODES
+
+    bh_depth = bh_data[MethodDataDataFrame.depth.name].max() if MethodDataDataFrame.depth.name in bh_data.columns else 0
+
+    minimun_depth_in_rock_meters = 3
+
+    depth_rock_code_list = nadag_find_comment_code(bh_data, int(nadag_rock_codes["rock_stop_code"]))
+
+    if len(depth_rock_code_list) == 0:
+        depth_rock_code = np.inf
+    else:
+        depth_rock_code = min(depth_rock_code_list)
+
+    other_codes = {
+        "intepreted_rock_code": nadag_find_comment_code(bh_data, int(nadag_rock_codes["intepreted_rock_code"])),
+        "depth_to_rock_code": nadag_find_comment_code(bh_data, int(nadag_rock_codes["depth_to_rock_code"])),
+        "rock_more_3_meters_code": nadag_find_comment_code(bh_data, int(nadag_rock_codes["rock_more_3_meters_code"])),
+    }
+    return_dict = {
+        "actual_depth": None,
+        "actual_quality": None,
+    }
+
+    if not pd.isna(depth_rock_code) and not pd.isna(bh_depth):
+        if depth_rock_code > bh_depth:
+            return_dict["actual_quality"] = None
+
+        else:
+            if round(bh_depth - depth_rock_code, 1) < minimun_depth_in_rock_meters:
+                return_dict["actual_quality"] = 1.0  # antatt
+
+            else:
+                return_dict["actual_quality"] = 2.0  # påvist
+
+            return_dict["actual_depth"] = depth_rock_code
+
+    return return_dict, other_codes
