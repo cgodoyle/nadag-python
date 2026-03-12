@@ -168,8 +168,6 @@ def postprocess_methods_data_and_info(
     else:
         new_data_df = pd.concat(new_data, ignore_index=True).reset_index(drop=True)
 
-    logger.debug(new_data_df)
-
     if len(new_info) == 0:
         logger.warning("No method info found for any method type. Returning empty DataFrames.")
         new_info_df = pd.DataFrame()

@@ -386,6 +386,7 @@ async def fetch_from_bounds(
     """
 
     logger.info(f"Fetching features in bounds: {bounds}")
+    logger.debug(settings.model_dump())
 
     http_client = NadagHTTPClient()
 
