@@ -234,7 +234,9 @@ test_series_aggregated
 
 ==============================
 ```
-
+> **_To Do_**: I have found some inconsistencies in the field names across different method types in the NADAG API, which can lead to confusion and difficulties when trying to analyze the data. For example, the penetration force is represented in `metode-KombinasjonSondering` and `metode-TrykkSondering` as `anvendtLast`, while in `metode-StatiskSondering` it is represented as `anvendtlast` (almost identical and very difficult to find out until your 'rp'-plots aren't visible anymore). This can make it difficult to work with the data, since it requires additional steps to standardize the column names across different method types. 
+> My workaround for this issue is to create a method in the `utils` module for normalizing columns in a dataframe given the canonical names of the columns, and then apply this method to the `methods_data` dataframe when before appending it to the final `NadagData` dataclass object. This way, we can ensure that the column names are consistent across different method types and make it easier to work with the data. Still I wonder if there are more places where we should apply this normalization, or whether we should force the models to use normalized column names from the beginning, but then we would lose the traceability of where each piece of data is coming from in the NADAG API, which can be important for debugging and understanding the data. I guess we can start with normalizing just the `methods_data` dataframe and then see if we need to apply it to other dataframes as well in the future.
+> It would be ideal if the NADAG API had a more consistent naming convention for columns representing similar data across different method types.
 
 ### Boreholes and Samples GeoDataFrame structure
 The data in `NadagData`can be post-processed to create two GeoDataFrames, one for boreholes and one for samples, with a more standardized format for analysis and visualization, by calling the `get_boreholes_and_samples` method of the `posprocessing` module. 
