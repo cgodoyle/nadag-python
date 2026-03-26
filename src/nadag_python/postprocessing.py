@@ -736,3 +736,71 @@ def nadag_get_actual_depth_to_rock_dict(
             return_dict["actual_depth"] = depth_rock_code
 
     return return_dict, other_codes
+
+
+def extract_method_ids_from_investigations(
+    gdf: gpd.GeoDataFrame,
+    method_columns: list[str] | None = None,
+) -> gpd.GeoDataFrame:
+    """
+    Filters a GeoDataFrame to keep only rows with at least one non-null method column,
+    extracts method IDs (title field) from nested list-of-dicts columns, and creates
+    a new GeoDataFrame with one row per method ID.
+
+    Args:
+        gdf (gpd.GeoDataFrame): Input GeoDataFrame with method columns containing
+                                lists of dictionaries with 'title' field.
+        method_columns (list[str], optional): List of column names to extract method IDs from.
+                                              Defaults to [FIELD.rp.metode_key, FIELD.tot.metode_key].
+
+    Returns:
+        gpd.GeoDataFrame: A new GeoDataFrame with columns 'method_id', 'location_id', and 'geometry',
+                          containing one row per method ID found in the input.
+    """
+    if method_columns is None:
+        method_columns = [FIELD.rp.metode_key, FIELD.tot.metode_key]
+
+    # Filter rows where at least one method column is not null
+    gdf_filtered = gdf.dropna(subset=method_columns, how="all").copy()
+
+    if gdf_filtered.empty:
+        logger.warning("No rows with method data found after filtering.")
+        return gpd.GeoDataFrame(
+            columns=[MethodDataFrame.method_id.name, MethodDataFrame.location_id.name, "geometry"], crs=gdf.crs
+        )
+
+    # Extract method IDs
+    method_rows = []
+    for idx, row in gdf_filtered.iterrows():
+        geometry = row.geometry
+        location_id = row.get(MethodDataFrame.location_id.value)
+        method_ids = []
+
+        # Extract titles from each method column
+        for col in method_columns:
+            if pd.notna(row[col]) and isinstance(row[col], list):
+                for method_dict in row[col]:
+                    if isinstance(method_dict, dict) and "title" in method_dict:
+                        method_ids.append(method_dict["title"])
+
+        # Create one row per method_id
+        for method_id in method_ids:
+            method_rows.append(
+                {
+                    "geometry": geometry,
+                    MethodDataFrame.method_id.name: method_id,
+                    MethodDataFrame.location_id.name: location_id,
+                }
+            )
+
+    if not method_rows:
+        logger.warning("No method IDs extracted from the filtered GeoDataFrame.")
+        return gpd.GeoDataFrame(
+            columns=[MethodDataFrame.method_id.name, MethodDataFrame.location_id.name, "geometry"], crs=gdf.crs
+        )
+
+    # Create new GeoDataFrame
+    result_gdf = gpd.GeoDataFrame(method_rows, crs=gdf.crs)
+    logger.info(f"Extracted {len(result_gdf)} method IDs from {len(gdf_filtered)} investigations.")
+
+    return result_gdf
