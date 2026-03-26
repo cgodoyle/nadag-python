@@ -40,7 +40,11 @@ async def check_api_status() -> bool:
 
 
 async def get_features_in_bbox_single(
-    http_client: NadagHTTPClient, bbox: BoundingBox, collection: str, limit: int = 1000
+    http_client: NadagHTTPClient,
+    bbox: BoundingBox,
+    collection: str,
+    limit: int = 1000,
+    pagination_concurrency: Optional[int] = None,
 ) -> PaginatedResponse:
     """
     Fetch features from a specified collection within a bounding box.
@@ -49,6 +53,8 @@ async def get_features_in_bbox_single(
         bbox (BoundingBox): A list or tuple of four floats representing the bounding box [minx, miny, maxx, maxy].
         collection (str): The name of the collection to fetch features from.
         limit (int): The maximum number of features to return.
+        pagination_concurrency (int, optional): Max concurrent requests for pagination.
+                                               Defaults to API_MAX_CONCURRENCY if None.
 
     Returns:
         PaginatedResponse: A paginated response containing the features within the bounding box.
@@ -65,7 +71,12 @@ async def get_features_in_bbox_single(
 
     url = http_client.build_collection_url(collection=collection)
 
-    results = [item async for item in http_client.get_features_paginated(url, params=params)]
+    results = [
+        item
+        async for item in http_client.get_features_paginated(
+            url, params=params, page_size=limit, max_concurrency=pagination_concurrency
+        )
+    ]
     return PaginatedResponse.merge(results)
 
 
@@ -75,6 +86,7 @@ async def get_features_in_bbox(
     collection: str,
     limit: int = 1000,
     max_dist_query: int | float = 500,
+    pagination_concurrency: Optional[int] = None,
 ) -> PaginatedResponse:
     """
     Fetch features from a specified collection within a bounding box, splitting the query
@@ -85,6 +97,8 @@ async def get_features_in_bbox(
         collection (str): The name of the collection to fetch features from.
         limit (int): The maximum number of features to return per sub-box.
         max_dist_query (int): The maximum distance in meters for each sub-box query.
+        pagination_concurrency (int, optional): Max concurrent requests for pagination.
+                                               Defaults to API_MAX_CONCURRENCY if None.
 
     Returns:
         PaginatedResponse: A paginated response containing the features within the bounding box.
@@ -114,6 +128,7 @@ async def get_features_in_bbox(
             bbox=list(item.geometry.bounds),  # ty:ignore[unresolved-attribute]
             collection=collection,
             limit=limit,
+            pagination_concurrency=pagination_concurrency,
         )
         response_list.append(response)
 
@@ -372,6 +387,7 @@ async def get_method_and_sample_nadag_data(http_client: NadagHTTPClient, temp_da
 async def fetch_from_bounds(
     bounds: BoundingBox,
     max_distance_query: int | float = settings.API_MAX_DIST_QUERY,
+    pagination_concurrency: Optional[int] = None,
 ) -> NadagData:
     """
     Fetch features from the API within the specified bounds.
@@ -380,6 +396,8 @@ async def fetch_from_bounds(
         bounds (BoundingBox): A list or tuple of four floats representing the bounding box [minx, miny, maxx, maxy].
         max_distance_query (int | float): The maximum distance for the query.
                                               Defaults to the value in settings.API_MAX_DIST_QUERY.
+        pagination_concurrency (int, optional): Max concurrent requests for pagination.
+                                               Defaults to API_MAX_CONCURRENCY if None.
 
     Returns:
         NadagData: A new NadagData object with the fetched data.
@@ -396,12 +414,14 @@ async def fetch_from_bounds(
             bounds,
             FIELD.geotekniskborehullunders,
             max_dist_query=max_distance_query,
+            pagination_concurrency=pagination_concurrency,
         ),
         get_features_in_bbox(
             http_client,
             bounds,
             FIELD.geotekniskborehull,
             max_dist_query=max_distance_query,
+            pagination_concurrency=pagination_concurrency,
         ),
     )
 

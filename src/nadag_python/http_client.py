@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from typing import Any, AsyncGenerator, Optional
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 from tenacity import (
@@ -206,30 +207,77 @@ class NadagHTTPClient:
         url: str,
         params: Optional[dict] = None,
         page_size: int = 100,
+        max_concurrency: Optional[int] = None,
     ) -> AsyncGenerator[PaginatedResponse, None]:
         """
         Fetch features from a collection in a paginated manner.
+        Uses concurrent offset-based pagination when available for better performance.
+
+        Args:
+            url: The API endpoint URL
+            params: Query parameters
+            page_size: Number of items per page
+            max_concurrency: Max concurrent requests for offset-based pagination.
+                           Defaults to API_MAX_CONCURRENCY if None.
         """
         logger.debug(f"API endpoint: {url}")
         params = params or {}
         params["limit"] = page_size
-        next_url = clean_url(url)
-        first_page = True
+        url = clean_url(url)
 
-        async with self.semaphore:
-            async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-                while next_url:
-                    current_params = params if first_page else None
-                    first_page = False
+        if max_concurrency is None:
+            max_concurrency = settings.API_MAX_CONCURRENCY
 
-                    data = await self._fetch_page(client, next_url, current_params)
+        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            # Fetch first page
+            async with self.semaphore:
+                first_data = await self._fetch_page(client, url, params)
+            yield PaginatedResponse(**first_data)
+
+            # Check if there are more pages
+            next_link = next(
+                (link["href"] for link in first_data.get("links", []) if link.get("rel") == "next"),
+                None,
+            )
+
+            if not next_link:
+                return
+
+            # Try to detect offset-based pagination
+            parsed_next_q = parse_qs(urlparse(next_link).query)
+            offset_key = next((k for k in ("offset", "startindex", "startIndex") if k in parsed_next_q), None)
+            number_matched = first_data.get("numberMatched")
+
+            if offset_key and isinstance(number_matched, int):
+                # Use concurrent offset-based pagination
+                start_offset = int(parsed_next_q[offset_key][0])
+                offsets = range(start_offset, number_matched, page_size)
+
+                logger.debug(f"Using concurrent pagination: {len(list(offsets))} pages, concurrency={max_concurrency}")
+
+                sem = asyncio.Semaphore(max_concurrency)
+
+                async def fetch_page_offset(offset: int):
+                    async with sem:
+                        page_params = {**params, offset_key: offset}
+                        return await self._fetch_page(client, url, page_params)
+
+                tasks = [asyncio.create_task(fetch_page_offset(off)) for off in offsets]
+                for task in asyncio.as_completed(tasks):
+                    data = await task
                     yield PaginatedResponse(**data)
-
-                    next_link = next(
+            else:
+                # Fallback to sequential next-link pagination
+                logger.debug("Using sequential pagination (no offset parameter detected)")
+                current_url = next_link
+                while current_url:
+                    async with self.semaphore:
+                        data = await self._fetch_page(client, current_url)
+                    yield PaginatedResponse(**data)
+                    current_url = next(
                         (link["href"] for link in data.get("links", []) if link.get("rel") == "next"),
                         None,
                     )
-                    next_url = next_link if next_link else None
 
     @api_retry()
     async def _fetch_page(self, client: httpx.AsyncClient, url: str, params: Optional[dict] = None) -> dict:
