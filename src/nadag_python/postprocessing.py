@@ -497,6 +497,8 @@ def export_methods_to_gdf(nadag_data: NadagData) -> GeoDataFrameType:
         GeoDataFrameType: A GeoDataFrame containing the soundings data structured according to the fields defined in GrundigMethodDataFrame.
 
     """
+    if nadag_data.methods_info is None or nadag_data.methods_info.empty:
+        return gpd.GeoDataFrame(geometry=[])
 
     methods = gpd.GeoDataFrame(
         [
