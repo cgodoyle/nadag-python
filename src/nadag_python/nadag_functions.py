@@ -1,4 +1,5 @@
 import asyncio
+import time
 from typing import Optional
 
 import geopandas as gpd
@@ -117,20 +118,18 @@ async def get_features_in_bbox(
         n_rows,
         n_cols,
     )
-    response_list = []
-
-    for item in sub_boxes.itertuples():
-        logger.debug(
-            f"Fetching features in sub-box {item.id} with bounds {item.geometry.bounds}"  # ty:ignore[unresolved-attribute]
-        )
-        response = await get_features_in_bbox_single(
-            http_client,
-            bbox=list(item.geometry.bounds),  # ty:ignore[unresolved-attribute]
-            collection=collection,
-            limit=limit,
-            pagination_concurrency=pagination_concurrency,
-        )
-        response_list.append(response)
+    response_list = await asyncio.gather(
+        *[
+            get_features_in_bbox_single(
+                http_client,
+                bbox=list(item.geometry.bounds),  # ty:ignore[unresolved-attribute]
+                collection=collection,
+                limit=limit,
+                pagination_concurrency=pagination_concurrency,
+            )
+            for item in sub_boxes.itertuples()
+        ]
+    )
 
     response_list = [item for item in response_list if isinstance(item, PaginatedResponse) and len(item) > 0]
     return PaginatedResponse.merge(response_list)
@@ -184,12 +183,14 @@ async def get_soundings_data_raw(
 
     responses = []
     logger.debug(f"{len(urls)} methods found in GBHU.")
-    for url_group in urls:
-        logger.debug(f"fetching {len(url_group)} urls in group")
+
+    async def _fetch_group(url_group: list[str]) -> list[dict]:
         group_responses = []
         async for feature in http_client.get_features_from_urls_stream(url_group):
             group_responses.append(feature)
-        responses.append(group_responses)
+        return group_responses
+
+    responses = await asyncio.gather(*[_fetch_group(ug) for ug in urls])
 
     soundings_info = {mm: pd.DataFrame([xx["properties"] for xx in rr]) for mm, rr in zip(found_methods, responses)}
     # for ii, mm in enumerate(found_methods):
@@ -307,7 +308,7 @@ async def get_test_series(
 
     sample_hrefs = [[sample[FIELD.sample.serie_href] for sample in sample_serie] for sample_serie in sample_series]
 
-    sample_responses = [await http_client.get_href_list(urls) for urls in sample_hrefs]
+    sample_responses = await asyncio.gather(*[http_client.get_href_list(urls) for urls in sample_hrefs])
 
     samples_series_df = _get_sample_series_from_responses(
         sample_responses, sample_series_locations, sample_series_investigations
@@ -406,44 +407,48 @@ async def fetch_from_bounds(
     logger.info(f"Fetching features in bounds: {bounds}")
     logger.debug(settings.model_dump())
 
-    http_client = NadagHTTPClient()
+    async with NadagHTTPClient() as http_client:
+        t0 = time.monotonic()
+        gbhu_response, gbh_response = await asyncio.gather(
+            get_features_in_bbox(
+                http_client,
+                bounds,
+                FIELD.geotekniskborehullunders,
+                max_dist_query=max_distance_query,
+                pagination_concurrency=pagination_concurrency,
+            ),
+            get_features_in_bbox(
+                http_client,
+                bounds,
+                FIELD.geotekniskborehull,
+                max_dist_query=max_distance_query,
+                pagination_concurrency=pagination_concurrency,
+            ),
+        )
+        logger.info(f"Bbox feature fetch took {time.monotonic() - t0:.1f}s")
 
-    gbhu_response, gbh_response = await asyncio.gather(
-        get_features_in_bbox(
-            http_client,
-            bounds,
-            FIELD.geotekniskborehullunders,
-            max_dist_query=max_distance_query,
-            pagination_concurrency=pagination_concurrency,
-        ),
-        get_features_in_bbox(
-            http_client,
-            bounds,
-            FIELD.geotekniskborehull,
-            max_dist_query=max_distance_query,
-            pagination_concurrency=pagination_concurrency,
-        ),
-    )
+        if len(gbhu_response) == 0:
+            logger.warning(f"No features found in {FIELD.geotekniskborehullunders} collection for the given bounds.")
+            return NadagData(bounds=tuple(bounds))
 
-    if len(gbhu_response) == 0:
-        logger.warning(f"No features found in {FIELD.geotekniskborehullunders} collection for the given bounds.")
-        return NadagData(bounds=tuple(bounds))
+        investigations = gbhu_response.to_gdf()
+        logger.info(f"Fetched {len(investigations)} features in {FIELD.geotekniskborehullunders} collection.")
 
-    investigations = gbhu_response.to_gdf()
-    logger.info(f"Fetched {len(investigations)} features in {FIELD.geotekniskborehullunders} collection.")
+        locations = gbh_response.to_gdf()
+        logger.info(f"Fetched {len(locations)} features in {FIELD.geotekniskborehull} collection.")
 
-    locations = gbh_response.to_gdf()
-    logger.info(f"Fetched {len(locations)} features in {FIELD.geotekniskborehull} collection.")
+        # Create intermediate object for soundings fetch
+        temp_data = NadagData(
+            bounds=tuple(bounds),
+            locations=locations,
+            investigations=investigations,
+        )
 
-    # Create intermediate object for soundings fetch
-    temp_data = NadagData(
-        bounds=tuple(bounds),
-        locations=locations,
-        investigations=investigations,
-    )
-
-    temp_data = await get_method_and_sample_nadag_data(http_client, temp_data)
-    return temp_data
+        t1 = time.monotonic()
+        temp_data = await get_method_and_sample_nadag_data(http_client, temp_data)
+        logger.info(f"Method & sample fetch took {time.monotonic() - t1:.1f}s")
+        logger.info(f"Total fetch_from_bounds took {time.monotonic() - t0:.1f}s")
+        return temp_data
 
 
 async def fetch_from_location_ids(location_ids: list[str]) -> NadagData:
@@ -456,37 +461,38 @@ async def fetch_from_location_ids(location_ids: list[str]) -> NadagData:
         NadagData: A NadagData object containing the fetched data for the given location ID.
     """
 
-    nadag_client = NadagHTTPClient()
-
-    href_list = [nadag_client.build_collection_url(collection="geotekniskborehull") + f"/{lid}" for lid in location_ids]
-    resp = await nadag_client.get_href_list(href_list)
-
-    locations = pd.concat(
-        [
-            PaginatedResponse(
-                type="FeatureCollection",
-                features=[rr],
-                numberReturned=len(rr) if isinstance(rr, dict) else 1,
-                numberMatched=len(rr) if isinstance(rr, dict) else 1,
-                timeStamp=None,
-            ).to_gdf()
-            for rr in resp
+    async with NadagHTTPClient() as nadag_client:
+        href_list = [
+            nadag_client.build_collection_url(collection="geotekniskborehull") + f"/{lid}" for lid in location_ids
         ]
-    )
-    locations = locations.set_crs(settings.API_CRS, allow_override=True).to_crs(settings.DEFAULT_CRS)
-    href_list = [
-        nadag_client.build_collection_url(collection="geotekniskborehullunders", query_params={"underspkt_fk": lid})
-        for lid in location_ids
-    ]
-    resp = await nadag_client.get_href_list(href_list)
-    investigations = pd.concat([PaginatedResponse(**rr).to_gdf() for rr in resp])
-    investigations = investigations.set_crs(settings.API_CRS, allow_override=True).to_crs(settings.DEFAULT_CRS)
+        resp = await nadag_client.get_href_list(href_list)
 
-    temp_data = NadagData(bounds=locations.total_bounds, locations=locations, investigations=investigations)
+        locations = pd.concat(
+            [
+                PaginatedResponse(
+                    type="FeatureCollection",
+                    features=[rr],
+                    numberReturned=len(rr) if isinstance(rr, dict) else 1,
+                    numberMatched=len(rr) if isinstance(rr, dict) else 1,
+                    timeStamp=None,
+                ).to_gdf()
+                for rr in resp
+            ]
+        )
+        locations = locations.set_crs(settings.API_CRS, allow_override=True).to_crs(settings.DEFAULT_CRS)
+        href_list = [
+            nadag_client.build_collection_url(collection="geotekniskborehullunders", query_params={"underspkt_fk": lid})
+            for lid in location_ids
+        ]
+        resp = await nadag_client.get_href_list(href_list)
+        investigations = pd.concat([PaginatedResponse(**rr).to_gdf() for rr in resp])
+        investigations = investigations.set_crs(settings.API_CRS, allow_override=True).to_crs(settings.DEFAULT_CRS)
 
-    temp_data = await get_method_and_sample_nadag_data(nadag_client, temp_data)
+        temp_data = NadagData(bounds=locations.total_bounds, locations=locations, investigations=investigations)
 
-    return temp_data
+        temp_data = await get_method_and_sample_nadag_data(nadag_client, temp_data)
+
+        return temp_data
 
 
 def get_sounding_by_id(

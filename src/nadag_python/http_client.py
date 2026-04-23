@@ -60,9 +60,13 @@ def api_retry(
 
 
 class NadagHTTPClient:
-    """
-    A client for making asynchronous HTTP requests to the NADAG API.
+    """A client for making asynchronous HTTP requests to the NADAG API.
 
+    Uses a shared ``httpx.AsyncClient`` for connection pooling (TCP + TLS reuse).
+    Must be used as an async context manager::
+
+        async with NadagHTTPClient() as client:
+            data = await client.get_feature(url)
     """
 
     def __init__(
@@ -70,9 +74,29 @@ class NadagHTTPClient:
         base_url: str = settings.API_BASE_URL,
         max_concurrency: int = settings.API_MAX_CONCURRENCY,
     ):
-
         self.base_url = clean_url(base_url)
         self.semaphore = asyncio.Semaphore(max_concurrency)
+        self._client: httpx.AsyncClient | None = None
+        self._owns_client = False
+
+    async def __aenter__(self) -> "NadagHTTPClient":
+        if self._client is None:
+            self._client = httpx.AsyncClient(timeout=TIMEOUT)
+            self._owns_client = True
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        if self._owns_client and self._client is not None:
+            await self._client.aclose()
+            self._client = None
+            self._owns_client = False
+
+    def _get_client(self) -> httpx.AsyncClient:
+        """Return the shared client, creating one lazily if not in context manager."""
+        if self._client is None:
+            self._client = httpx.AsyncClient(timeout=TIMEOUT)
+            self._owns_client = True
+        return self._client
 
     @property
     def query_url(self):
@@ -80,27 +104,25 @@ class NadagHTTPClient:
 
     @api_retry()
     async def check_api_status(self) -> bool:
-        """
-        Check the status of the NADAG API.
+        """Check the status of the NADAG API.
 
         Returns:
             bool: True if the API is reachable and responsive, False otherwise.
         """
-        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-            response = await client.get(self.base_url)
-            response.raise_for_status()
-            return True
+        client = self._get_client()
+        response = await client.get(self.base_url)
+        response.raise_for_status()
+        return True
 
     def build_collection_url(self, collection: str, query_params: Optional[dict[str, Any]] = None) -> str:
-        """
-        Build a URL for querying a collection with optional query parameters.
+        """Build a URL for querying a collection with optional query parameters.
 
         Args:
-            collection (str): The collection name
-            query_params (dict, optional): Query parameters as key-value pairs
+            collection: The collection name
+            query_params: Query parameters as key-value pairs
 
         Returns:
-            str: The complete URL with query parameters
+            The complete URL with query parameters
 
         Example:
             client.build_collection_url(
@@ -111,7 +133,6 @@ class NadagHTTPClient:
         base = self.query_url.format(collection=collection)
 
         if query_params:
-            # Usar httpx.URL para construir URLs de forma segura
             url = httpx.URL(base, params=query_params)
             return str(url)
 
@@ -119,30 +140,33 @@ class NadagHTTPClient:
 
     @api_retry()
     async def get_feature(self, url: str) -> dict:
-        """
-        Fetch a single feature by its URL.
+        """Fetch a single feature by its URL.
+
         Args:
-            url (str): The URL of the feature to fetch.
+            url: The URL of the feature to fetch.
+
         Returns:
-            dict: The JSON response containing the feature data.
+            The JSON response containing the feature data.
         """
         url = clean_url(url)
+        client = self._get_client()
         async with self.semaphore:
-            async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-                response = await client.get(url)
-                response.raise_for_status()
-                return response.json()
+            response = await client.get(url)
+            response.raise_for_status()
+            return response.json()
 
     async def get_features_from_urls(self, urls: list[str], chunk_size: int = DEFAULT_CHUNK_SIZE) -> list[dict]:
-        """
-        Fetch features from a list of URLs asynchronously in chunks to avoid server saturation.
+        """Fetch features from a list of URLs asynchronously in chunks to avoid server saturation.
+
         Raises an error if any URL fails after retries.
 
         Args:
-            urls (list[str]): A list of URLs to fetch features from.
-            chunk_size (int): Number of concurrent requests per chunk.
+            urls: A list of URLs to fetch features from.
+            chunk_size: Number of concurrent requests per chunk.
+
         Returns:
-            list[dict]: A list of JSON responses containing the feature data.
+            A list of JSON responses containing the feature data.
+
         Raises:
             RuntimeError: If any URLs fail after all retry attempts.
         """
@@ -177,30 +201,31 @@ class NadagHTTPClient:
         return all_results
 
     async def get_features_from_urls_stream(self, urls: list[str]):
-        """
-        Yield features from a list of URLs asynchronously as they complete.
+        """Yield features from a list of URLs asynchronously as they complete.
+
         Args:
-            urls (list[str]): A list of URLs to fetch features from.
+            urls: A list of URLs to fetch features from.
+
         Yields:
-            dict: The JSON response containing the feature data.
+            The JSON response containing the feature data.
         """
+        client = self._get_client()
 
         @api_retry()
-        async def fetch(client: httpx.AsyncClient, url: str):
+        async def fetch(url: str):
             async with self.semaphore:
                 response = await client.get(clean_url(url))
                 response.raise_for_status()
                 return response.json()
 
-        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-            tasks = [fetch(client, url) for url in urls]
-            for coro in asyncio.as_completed(tasks):
-                try:
-                    result = await coro
-                    yield result
-                except Exception as e:
-                    logger.error(f"Failed to fetch URL after retries: {e}")
-                    continue
+        tasks = [fetch(url) for url in urls]
+        for coro in asyncio.as_completed(tasks):
+            try:
+                result = await coro
+                yield result
+            except Exception as e:
+                logger.error(f"Failed to fetch URL after retries: {e}")
+                continue
 
     async def get_features_paginated(
         self,
@@ -209,8 +234,8 @@ class NadagHTTPClient:
         page_size: int = 100,
         max_concurrency: Optional[int] = None,
     ) -> AsyncGenerator[PaginatedResponse, None]:
-        """
-        Fetch features from a collection in a paginated manner.
+        """Fetch features from a collection in a paginated manner.
+
         Uses concurrent offset-based pagination when available for better performance.
 
         Args:
@@ -228,56 +253,57 @@ class NadagHTTPClient:
         if max_concurrency is None:
             max_concurrency = settings.API_MAX_CONCURRENCY
 
-        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-            # Fetch first page
-            async with self.semaphore:
-                first_data = await self._fetch_page(client, url, params)
-            yield PaginatedResponse(**first_data)
+        client = self._get_client()
 
-            # Check if there are more pages
-            next_link = next(
-                (link["href"] for link in first_data.get("links", []) if link.get("rel") == "next"),
-                None,
-            )
+        # Fetch first page
+        async with self.semaphore:
+            first_data = await self._fetch_page(client, url, params)
+        yield PaginatedResponse(**first_data)
 
-            if not next_link:
-                return
+        # Check if there are more pages
+        next_link = next(
+            (link["href"] for link in first_data.get("links", []) if link.get("rel") == "next"),
+            None,
+        )
 
-            # Try to detect offset-based pagination
-            parsed_next_q = parse_qs(urlparse(next_link).query)
-            offset_key = next((k for k in ("offset", "startindex", "startIndex") if k in parsed_next_q), None)
-            number_matched = first_data.get("numberMatched")
+        if not next_link:
+            return
 
-            if offset_key and isinstance(number_matched, int):
-                # Use concurrent offset-based pagination
-                start_offset = int(parsed_next_q[offset_key][0])
-                offsets = range(start_offset, number_matched, page_size)
+        # Try to detect offset-based pagination
+        parsed_next_q = parse_qs(urlparse(next_link).query)
+        offset_key = next((k for k in ("offset", "startindex", "startIndex") if k in parsed_next_q), None)
+        number_matched = first_data.get("numberMatched")
 
-                logger.debug(f"Using concurrent pagination: {len(list(offsets))} pages, concurrency={max_concurrency}")
+        if offset_key and isinstance(number_matched, int):
+            # Use concurrent offset-based pagination
+            start_offset = int(parsed_next_q[offset_key][0])
+            offsets = range(start_offset, number_matched, page_size)
 
-                sem = asyncio.Semaphore(max_concurrency)
+            logger.debug(f"Using concurrent pagination: {len(list(offsets))} pages, concurrency={max_concurrency}")
 
-                async def fetch_page_offset(offset: int):
-                    async with sem:
-                        page_params = {**params, offset_key: offset}
-                        return await self._fetch_page(client, url, page_params)
+            sem = asyncio.Semaphore(max_concurrency)
 
-                tasks = [asyncio.create_task(fetch_page_offset(off)) for off in offsets]
-                for task in asyncio.as_completed(tasks):
-                    data = await task
-                    yield PaginatedResponse(**data)
-            else:
-                # Fallback to sequential next-link pagination
-                logger.debug("Using sequential pagination (no offset parameter detected)")
-                current_url = next_link
-                while current_url:
-                    async with self.semaphore:
-                        data = await self._fetch_page(client, current_url)
-                    yield PaginatedResponse(**data)
-                    current_url = next(
-                        (link["href"] for link in data.get("links", []) if link.get("rel") == "next"),
-                        None,
-                    )
+            async def fetch_page_offset(offset: int):
+                async with sem:
+                    page_params = {**params, offset_key: offset}
+                    return await self._fetch_page(client, url, page_params)
+
+            tasks = [asyncio.create_task(fetch_page_offset(off)) for off in offsets]
+            for task in asyncio.as_completed(tasks):
+                data = await task
+                yield PaginatedResponse(**data)
+        else:
+            # Fallback to sequential next-link pagination
+            logger.debug("Using sequential pagination (no offset parameter detected)")
+            current_url = next_link
+            while current_url:
+                async with self.semaphore:
+                    data = await self._fetch_page(client, current_url)
+                yield PaginatedResponse(**data)
+                current_url = next(
+                    (link["href"] for link in data.get("links", []) if link.get("rel") == "next"),
+                    None,
+                )
 
     @api_retry()
     async def _fetch_page(self, client: httpx.AsyncClient, url: str, params: Optional[dict] = None) -> dict:
@@ -288,18 +314,17 @@ class NadagHTTPClient:
 
     @api_retry()
     async def _get_async(self, href: str, params: dict | None = None) -> dict | None:
-        """
-        Fetch a single URL and handle pagination if necessary.
-        This method is used internally by get_href_list to fetch each URL in the list, and it will handle pagination
-        if the response includes a "next" link.
+        """Fetch a single URL and handle pagination if necessary.
+
+        This method is used internally by get_href_list to fetch each URL in the list,
+        and it will handle pagination if the response includes a "next" link.
 
         Args:
-            href (str): The URL to fetch.
-            params (dict | None): Optional query parameters for the initial request.
+            href: The URL to fetch.
+            params: Optional query parameters for the initial request.
 
         Returns:
-            dict | None: The JSON response containing the feature data, or None if the URL is invalid.
-
+            The JSON response containing the feature data, or None if the URL is invalid.
         """
         if href is None:
             return None
@@ -307,35 +332,35 @@ class NadagHTTPClient:
         all_features = []
         next_url = href
         first_page = True
+        client = self._get_client()
 
         async with self.semaphore:
-            async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-                while next_url:
-                    current_params = params if first_page else None
-                    first_page = False
+            while next_url:
+                current_params = params if first_page else None
+                first_page = False
 
-                    try:
-                        response = await client.get(next_url, params=current_params)
-                        response.raise_for_status()
-                        data = response.json()
+                try:
+                    response = await client.get(next_url, params=current_params)
+                    response.raise_for_status()
+                    data = response.json()
 
-                        if "features" in data and data["features"]:
-                            all_features.extend(data["features"])
+                    if "features" in data and data["features"]:
+                        all_features.extend(data["features"])
 
-                        next_url = None
-                        if "links" in data:
-                            for link in data["links"]:
-                                if link.get("rel") == "next":
-                                    next_url = link.get("href")
-                                    break
+                    next_url = None
+                    if "links" in data:
+                        for link in data["links"]:
+                            if link.get("rel") == "next":
+                                next_url = link.get("href")
+                                break
 
-                    except httpx.HTTPError as e:
-                        logger.error(f"HTTP error fetching {next_url}: {e}")
-                        raise
+                except httpx.HTTPError as e:
+                    logger.error(f"HTTP error fetching {next_url}: {e}")
+                    raise
 
-                    except Exception as e:
-                        logger.error(f"Unexpected error: {e}")
-                        raise
+                except Exception as e:
+                    logger.error(f"Unexpected error: {e}")
+                    raise
 
         if all_features:
             result = data.copy()
@@ -347,15 +372,17 @@ class NadagHTTPClient:
             return data
 
     async def get_href_list(self, href_list: list[str], chunk_size: int = DEFAULT_CHUNK_SIZE) -> list[dict]:
-        """
-        Fetch a list of URLs asynchronously in chunks.
+        """Fetch a list of URLs asynchronously in chunks.
+
         Raises an error if any URL fails after retries.
 
         Args:
-            href_list (list[str]): A list of URLs to fetch.
-            chunk_size (int): Number of concurrent requests per chunk.
+            href_list: A list of URLs to fetch.
+            chunk_size: Number of concurrent requests per chunk.
+
         Returns:
-            list[dict]: A list of JSON responses containing the feature data.
+            A list of JSON responses containing the feature data.
+
         Raises:
             RuntimeError: If any URLs fail after all retry attempts.
         """
@@ -389,9 +416,7 @@ class NadagHTTPClient:
 
     @staticmethod
     def process_api_responses(response_list: list[dict]) -> list[list[dict]]:
-        """
-        Process a list of API responses to extract feature properties.
-        """
+        """Process a list of API responses to extract feature properties."""
         properties = []
         for feature_dict in response_list:
             if feature_dict is None or "features" not in feature_dict:
