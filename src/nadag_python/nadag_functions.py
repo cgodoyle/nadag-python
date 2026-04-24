@@ -86,7 +86,7 @@ async def get_features_in_bbox(
     bbox: BoundingBox,
     collection: str,
     limit: int = 1000,
-    max_dist_query: int | float = 500,
+    max_dist_query: int | float = settings.API_MAX_DIST_QUERY,
     pagination_concurrency: Optional[int] = None,
 ) -> PaginatedResponse:
     """

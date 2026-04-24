@@ -23,11 +23,9 @@ from .utils import clean_url
 TIMEOUT = httpx.Timeout(
     connect=settings.API_TIMEOUT,
     read=settings.API_TIMEOUT,
-    pool=60.0,
-    write=10.0,
+    pool=settings.API_POOL_TIMEOUT,
+    write=settings.API_WRITE_TIMEOUT,
 )
-
-DEFAULT_CHUNK_SIZE = settings.API_MAX_CONCURRENCY
 
 logger = get_module_logger(__name__)
 
@@ -155,14 +153,14 @@ class NadagHTTPClient:
             response.raise_for_status()
             return response.json()
 
-    async def get_features_from_urls(self, urls: list[str], chunk_size: int = DEFAULT_CHUNK_SIZE) -> list[dict]:
-        """Fetch features from a list of URLs asynchronously in chunks to avoid server saturation.
+    async def get_features_from_urls(self, urls: list[str], chunk_size: Optional[int] = None) -> list[dict]:
+        """Fetch features from a list of URLs asynchronously.
 
         Raises an error if any URL fails after retries.
 
         Args:
             urls: A list of URLs to fetch features from.
-            chunk_size: Number of concurrent requests per chunk.
+            chunk_size: Deprecated and ignored. Concurrency is controlled by the client semaphore.
 
         Returns:
             A list of JSON responses containing the feature data.
@@ -173,20 +171,16 @@ class NadagHTTPClient:
         all_results = []
         failed_urls = []
 
-        for i in range(0, len(urls), chunk_size):
-            chunk = urls[i : i + chunk_size]
-            logger.debug(f"Fetching chunk {i // chunk_size + 1}/{-(-len(urls) // chunk_size)} ({len(chunk)} URLs)")
+        results = await asyncio.gather(
+            *[self.get_feature(url) for url in urls],
+            return_exceptions=True,
+        )
 
-            results = await asyncio.gather(
-                *[self.get_feature(url) for url in chunk],
-                return_exceptions=True,
-            )
-
-            for j, result in enumerate(results):
-                if isinstance(result, Exception):
-                    failed_urls.append((chunk[j], result))
-                else:
-                    all_results.append(result)
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                failed_urls.append((urls[i], result))
+            else:
+                all_results.append(result)
 
         if failed_urls:
             logger.warning(
@@ -231,7 +225,7 @@ class NadagHTTPClient:
         self,
         url: str,
         params: Optional[dict] = None,
-        page_size: int = 100,
+        page_size: int = settings.API_PAGE_SIZE,
         max_concurrency: Optional[int] = None,
     ) -> AsyncGenerator[PaginatedResponse, None]:
         """Fetch features from a collection in a paginated manner.
@@ -371,14 +365,14 @@ class NadagHTTPClient:
         else:
             return data
 
-    async def get_href_list(self, href_list: list[str], chunk_size: int = DEFAULT_CHUNK_SIZE) -> list[dict]:
-        """Fetch a list of URLs asynchronously in chunks.
+    async def get_href_list(self, href_list: list[str], chunk_size: Optional[int] = None) -> list[dict]:
+        """Fetch a list of URLs asynchronously.
 
         Raises an error if any URL fails after retries.
 
         Args:
             href_list: A list of URLs to fetch.
-            chunk_size: Number of concurrent requests per chunk.
+            chunk_size: Deprecated and ignored. Concurrency is controlled by the client semaphore.
 
         Returns:
             A list of JSON responses containing the feature data.
@@ -389,22 +383,16 @@ class NadagHTTPClient:
         all_results = []
         failed_urls = []
 
-        for i in range(0, len(href_list), chunk_size):
-            chunk = href_list[i : i + chunk_size]
-            logger.debug(
-                f"Fetching href chunk {i // chunk_size + 1}/{-(-len(href_list) // chunk_size)} ({len(chunk)} URLs)"
-            )
+        results = await asyncio.gather(
+            *[self._get_async(href) for href in href_list],
+            return_exceptions=True,
+        )
 
-            results = await asyncio.gather(
-                *[self._get_async(href) for href in chunk],
-                return_exceptions=True,
-            )
-
-            for j, result in enumerate(results):
-                if isinstance(result, Exception):
-                    failed_urls.append((chunk[j], result))
-                else:
-                    all_results.append(result)
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                failed_urls.append((href_list[i], result))
+            else:
+                all_results.append(result)
 
         if failed_urls:
             raise RuntimeError(
