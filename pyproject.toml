@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "nadag_python"
 version = "0.1.0"
 description = "A Python client for fetching geotechnical soundings and samples from the NADAG API"
+license = {text = "MIT"}
 readme = "README.md"
 requires-python = ">=3.12"
 authors = [
@@ -29,7 +30,8 @@ dev = [
     "matplotlib",
     "zensical",
     "mkdocstrings-python",
-    "ipykernel"
+  "ipykernel",
+  "python-semantic-release>=10.5,<11"
 ]
 
 [tool.setuptools.packages.find]
@@ -50,3 +52,38 @@ target-version = "py312"
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
+[tool.semantic_release]
+allow_zero_version = true
+major_on_zero = false
+tag_format = "v{version}"
+version_toml = ["pyproject.toml:project.version"]
+commit_parser = "conventional"
+commit_message = "chore(release): {version}"
+
+[tool.semantic_release.branches.main]
+match = "main"
+prerelease = false
+
+[tool.semantic_release.commit_parser_options]
+minor_tags = ["feat"]
+patch_tags = ["fix", "perf"]
+other_allowed_tags = ["build", "chore", "ci", "docs", "refactor", "style", "test"]
+parse_squash_commits = true
+ignore_merge_commits = true
+
+[tool.semantic_release.changelog]
+mode = "update"
+exclude_commit_patterns = [
+  '''chore\(release\): .+''',
+  '''chore(?:\([^)]*?\))?: .+''',
+  '''ci(?:\([^)]*?\))?: .+''',
+  '''style(?:\([^)]*?\))?: .+''',
+  '''test(?:\([^)]*?\))?: .+''',
+  '''Initial [Cc]ommit.*''',
+]
+
+[tool.semantic_release.changelog.default_templates]
+changelog_file = "CHANGELOG.md"
+output_format = "md"
+mask_initial_release = false
