@@ -108,9 +108,13 @@ class NadagHTTPClient:
             bool: True if the API is reachable and responsive, False otherwise.
         """
         client = self._get_client()
-        response = await client.get(self.base_url)
-        response.raise_for_status()
-        return True
+        try:
+            response = await client.get(self.base_url)
+            return response.is_success
+
+        except httpx.RequestError as e:
+            logger.warning(f"API status check failed: {e}")
+            return False
 
     def build_collection_url(self, collection: str, query_params: Optional[dict[str, Any]] = None) -> str:
         """Build a URL for querying a collection with optional query parameters.
