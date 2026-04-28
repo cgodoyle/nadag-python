@@ -129,7 +129,7 @@ class ApiSchemaConfig:
         name="sa",
         api_name="geotekniskproveseriedel",
         metode_key="metode-GeotekniskPrøveserie",
-        serie_href="harPrøveseriedel.href",
+        serie_href="harPrøverseriedel.href",
         data_href="harData.href",
         serie_id="prøveseriedelId",
         serie_id_ref="tilhørerPrøveseriedel.title",

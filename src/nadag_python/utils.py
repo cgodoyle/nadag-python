@@ -1,4 +1,5 @@
 import re
+from typing import Any
 
 import geopandas as gpd
 import pandas as pd
@@ -149,3 +150,36 @@ def case_insensitive_rename(df: pd.DataFrame, mapping: dict) -> pd.DataFrame:
             rename_map[col_map[old_lower]] = new_name
 
     return df.rename(columns=rename_map)
+
+
+def extract_nested_key_values(obj: Any, key: str) -> list[Any]:
+    """
+    Extract all non-null values for a key from nested dict/list/tuple structures.
+
+    Args:
+        obj (Any): Nested object to traverse.
+        key (str): Dictionary key to extract.
+
+    Returns:
+        list[Any]: All matching non-null values found during traversal.
+    """
+    values: list[Any] = []
+
+    if obj is None:
+        return values
+
+    if isinstance(obj, dict):
+        if key in obj and obj[key] is not None:
+            values.append(obj[key])
+
+        for value in obj.values():
+            if isinstance(value, (dict, list, tuple)):
+                values.extend(extract_nested_key_values(value, key))
+
+        return values
+
+    if isinstance(obj, (list, tuple)):
+        for item in obj:
+            values.extend(extract_nested_key_values(item, key))
+
+    return values

@@ -24,7 +24,7 @@ from .postprocessing import (
     merge_sample_dataframes,
     postprocess_methods_data_and_info,
 )
-from .utils import case_insensitive_rename, split_bbox, transform_bounds
+from .utils import case_insensitive_rename, extract_nested_key_values, split_bbox, transform_bounds
 
 logger = get_module_logger(__name__)
 
@@ -306,15 +306,16 @@ async def get_test_series(
 
     logger.debug(f"Fetched sample series for {len(sample_series)} locations.")
 
-    sample_hrefs = [[sample[FIELD.sample.serie_href] for sample in sample_serie] for sample_serie in sample_series]
+    sample_hrefs = [extract_nested_key_values(sample_serie, FIELD.sample.serie_href) for sample_serie in sample_series]
 
     sample_responses = await asyncio.gather(*[http_client.get_href_list(urls) for urls in sample_hrefs])
 
     samples_series_df = _get_sample_series_from_responses(
         sample_responses, sample_series_locations, sample_series_investigations
     )
+    logger.debug(f"Processed sample series into DataFrame with {len(samples_series_df)} rows.")
     samples_data_df = await _get_sample_data_from_series(http_client, samples_series_df)
-
+    logger.debug(f"Processed sample data into DataFrame with {len(samples_data_df)} rows.")
     merged_samples_df = merge_sample_dataframes(samples_series_df, samples_data_df)
 
     return merged_samples_df
