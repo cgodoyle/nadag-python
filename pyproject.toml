@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nadag_python"
-version = "0.0.0"
+version = "0.1.0"
 description = "A Python client for fetching geotechnical soundings and samples from the NADAG API"
 license = {text = "MIT"}
 readme = "README.md"
