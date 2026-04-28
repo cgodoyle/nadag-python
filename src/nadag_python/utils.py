@@ -6,6 +6,9 @@ import pandas as pd
 from shapely.geometry import box
 
 from .data_models import BoundingBox
+from .logging import get_module_logger
+
+logger = get_module_logger(__name__)
 
 
 def normalize_columns(df: pd.DataFrame, canonical_columns: list[str]) -> pd.DataFrame:
@@ -183,3 +186,117 @@ def extract_nested_key_values(obj: Any, key: str) -> list[Any]:
             values.extend(extract_nested_key_values(item, key))
 
     return values
+
+
+# ---------------------------------------------------------------------------
+# Safe access helpers for API responses
+# ---------------------------------------------------------------------------
+
+
+def safe_extract_features(response: Any) -> list[dict]:
+    """Safely extract the ``features`` list from a GeoJSON FeatureCollection.
+
+    Args:
+        response: The raw API response dict (or any object).
+
+    Returns:
+        The list of feature dicts, or ``[]`` if the key is missing or the
+        response is not a dict.
+    """
+    if not isinstance(response, dict):
+        logger.warning(f"Expected dict response, got {type(response).__name__}. Returning empty features list.")
+        return []
+
+    features = response.get("features")
+    if features is None:
+        logger.warning("Response missing 'features' key. Returning empty list.")
+        return []
+
+    if not isinstance(features, list):
+        logger.warning(f"Expected 'features' to be a list, got {type(features).__name__}. Returning empty list.")
+        return []
+
+    return features
+
+
+def safe_extract_properties(feature: Any) -> dict | None:
+    """Safely extract ``properties`` from a single GeoJSON feature.
+
+    Args:
+        feature: A feature dict.
+
+    Returns:
+        The properties dict, or ``None`` if missing/malformed.
+    """
+    if not isinstance(feature, dict):
+        return None
+    props = feature.get("properties")
+    if props is None or not isinstance(props, dict):
+        return None
+    return props
+
+
+def safe_extract_feature_list(response: Any, key: str = "properties") -> list[dict]:
+    """Extract a list of property dicts from a FeatureCollection, skipping malformed features.
+
+    Combines :func:`safe_extract_features` and :func:`safe_extract_properties`
+    into a single call.  Malformed features are silently skipped (with a debug
+    log) so the pipeline keeps running with whatever data is valid.
+
+    Args:
+        response: The raw API response dict.
+        key: The key to extract from each feature (default ``"properties"``).
+
+    Returns:
+        A list of dicts (one per valid feature).
+    """
+    features = safe_extract_features(response)
+    results: list[dict] = []
+    for feat in features:
+        if not isinstance(feat, dict):
+            logger.debug(f"Skipping non-dict feature: {type(feat).__name__}")
+            continue
+        value = feat.get(key)
+        if value is None or not isinstance(value, dict):
+            logger.debug(f"Skipping feature missing '{key}' key.")
+            continue
+        results.append(value)
+    return results
+
+
+def safe_first(collection: Any, default: Any = None) -> Any:
+    """Safely get the first element of a sequence.
+
+    Args:
+        collection: Any indexable sequence (list, tuple, etc.) or ``None``.
+        default: Value to return if the collection is empty or not a sequence.
+
+    Returns:
+        The first element, or *default*.
+    """
+    if collection is None:
+        return default
+    if not isinstance(collection, (list, tuple)):
+        return default
+    if len(collection) == 0:
+        return default
+    return collection[0]
+
+
+def safe_iloc(df: pd.DataFrame | pd.core.groupby.DataFrameGroupBy, index: int = 0, default: Any = None) -> Any:
+    """Safely index into a DataFrame with ``.iloc``.
+
+    Args:
+        df: A DataFrame (or Series).
+        index: The positional index to retrieve.
+        default: Value to return if the DataFrame is empty or index is out of range.
+
+    Returns:
+        The row at *index*, or *default*.
+    """
+    if df is None or (hasattr(df, "empty") and df.empty):
+        return default
+    try:
+        return df.iloc[index]
+    except (IndexError, KeyError):
+        return default

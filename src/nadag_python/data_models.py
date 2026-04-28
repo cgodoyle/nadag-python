@@ -255,6 +255,8 @@ class NadagData:
             logger.warning("Soundings info is empty. Returning empty DataFrame.")
             return {}
 
+        from .utils import safe_iloc  # lazy import to avoid circular dependency
+
         method_id_field = MethodDataFrame.method_id.value
 
         sounding_info = self.methods_info.query(f"{method_id_field} == @method_id")
@@ -291,7 +293,12 @@ class NadagData:
             logger.warning(
                 f"Multiple investigations found for GBHU ID {gbhu_id} in method_id {method_id}. Using the first one."
             )
-        investigation = investigation.iloc[0]
+        investigation = safe_iloc(investigation)
+        if investigation is None:
+            logger.warning(
+                f"No investigation found for GBHU ID {gbhu_id} in method_id {method_id}. Returning empty dict."
+            )
+            return {}
 
         sounding_data = sounding_data.rename(columns=MethodDataDataFrame.column_mapper())
         sounding_data = sounding_data.drop(
@@ -326,7 +333,12 @@ class NadagData:
         """
 
         location_id = investigation[MethodDataFrame.location_id]
-        location = self.locations.loc[self.locations[FIELD.id_field] == location_id].iloc[0]
+        location = safe_iloc(self.locations.loc[self.locations[FIELD.id_field] == location_id])
+        if location is None:
+            logger.warning(
+                f"No location found for location_id {location_id} in method_id {method_id}. Returning empty dict."
+            )
+            return {}
 
         inv = investigation.to_dict()
         loc = location.to_dict()
@@ -498,7 +510,7 @@ class PaginatedResponse(BaseModel):
         merged = copy.deepcopy(pages[0])
         merged.features = all_features
         merged.numberMatched = pages[0].numberMatched
-        merged.numberReturned = sum(p.numberReturned for p in pages)
+        merged.numberReturned = sum(p.numberReturned or 0 for p in pages)
         merged.links = []  # Optional: clear links
         return merged
 

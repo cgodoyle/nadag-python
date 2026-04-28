@@ -63,19 +63,23 @@ def add_empty_soundings(investigations, soundings_info) -> pd.DataFrame:
         return soundings_info
     empty_methods_df = pd.DataFrame(
         [
-            {
-                # MethodDataFrame.geometry.name: xx[MethodDataFrame.geometry.value],
-                MethodDataFrame.method_id.value: xx[FIELD.id_field]
-                + "_"
-                + str(xx[MethodDataFrame.method_type_nadag.value]),
-                MethodDataFrame.gbhu_id.value: xx[FIELD.id_field],
-                MethodDataFrame.depth_to_rock.value: xx[MethodDataFrame.depth_to_rock.value],
-                MethodDataFrame.depth_to_rock_quality.value: xx[MethodDataFrame.depth_to_rock_quality.value],
-                MethodDataFrame.method_type.value: MethodsConfig.GEOTEKNISKMETODE_TO_METHOD_TYPE_MAPPER.get(
-                    xx[MethodDataFrame.method_type_nadag.value]
-                ),
-            }
+            row_data
             for _, xx in investigations_with_no_data.iterrows()
+            if (
+                row_data := {
+                    MethodDataFrame.method_id.value: xx.get(FIELD.id_field, "")
+                    + "_"
+                    + str(xx.get(MethodDataFrame.method_type_nadag.value, "")),
+                    MethodDataFrame.gbhu_id.value: xx.get(FIELD.id_field),
+                    MethodDataFrame.depth_to_rock.value: xx.get(MethodDataFrame.depth_to_rock.value),
+                    MethodDataFrame.depth_to_rock_quality.value: xx.get(MethodDataFrame.depth_to_rock_quality.value),
+                    MethodDataFrame.method_type.value: MethodsConfig.GEOTEKNISKMETODE_TO_METHOD_TYPE_MAPPER.get(
+                        xx.get(MethodDataFrame.method_type_nadag.value)
+                    ),
+                }
+            )
+            is not None
+            and row_data.get(MethodDataFrame.gbhu_id.value) is not None
         ]
     )
 

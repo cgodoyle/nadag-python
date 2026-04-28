@@ -24,7 +24,15 @@ from .postprocessing import (
     merge_sample_dataframes,
     postprocess_methods_data_and_info,
 )
-from .utils import case_insensitive_rename, extract_nested_key_values, split_bbox, transform_bounds
+from .utils import (
+    case_insensitive_rename,
+    extract_nested_key_values,
+    safe_extract_feature_list,
+    safe_extract_features,
+    safe_first,
+    split_bbox,
+    transform_bounds,
+)
 
 logger = get_module_logger(__name__)
 
@@ -167,7 +175,8 @@ async def get_soundings_data_raw(
 
         valid_rows = nadag_data.investigations.dropna(subset=[mm_key])
 
-        current_urls = valid_rows[mm_key].map(lambda x: x[0][FIELD.href]).to_list()
+        current_urls = valid_rows[mm_key].map(lambda x: safe_first(x, {}).get(FIELD.href)).to_list()
+        current_urls = [u for u in current_urls if u is not None]
 
         if not current_urls:
             continue
@@ -192,7 +201,12 @@ async def get_soundings_data_raw(
 
     responses = await asyncio.gather(*[_fetch_group(ug) for ug in urls])
 
-    soundings_info = {mm: pd.DataFrame([xx["properties"] for xx in rr]) for mm, rr in zip(found_methods, responses)}
+    soundings_info = {
+        mm: pd.DataFrame(
+            [props for xx in rr if (props := (xx.get("properties") if isinstance(xx, dict) else None)) is not None]
+        )
+        for mm, rr in zip(found_methods, responses)
+    }
     # for ii, mm in enumerate(found_methods):
     #     soundings_info[mm][FIELD.model_gbhu_id] = gbhu_ids[ii]
 
@@ -206,9 +220,7 @@ async def get_soundings_data_raw(
 
     data_obs = {method: data_obs_list[i] for i, method in enumerate(soundings_info.keys())}
     soundings_data = {
-        method: pd.concat(
-            [pd.DataFrame([xx["properties"] for xx in data_i["features"]]) for data_i in data_obs[method]]
-        )
+        method: pd.concat([pd.DataFrame(safe_extract_feature_list(data_i)) for data_i in data_obs[method]])
         for method in found_methods
     }
 
@@ -234,8 +246,11 @@ def _get_sample_series_from_responses(
     samples_dataframe_list = []
     for sr, loc_id, inv_id in zip(sample_responses, location_ids, investigations_ids):
         for feature_dict in sr:
-            feature_list = feature_dict["features"]
-            sample_df = pd.DataFrame([item["properties"] for item in feature_list])
+            feature_list = safe_extract_feature_list(feature_dict)
+            if not feature_list:
+                logger.warning("Skipping feature_dict with no valid features in sample series.")
+                continue
+            sample_df = pd.DataFrame(feature_list)
             sample_df[SampleDataFrame.location_id.name] = loc_id
             sample_df[SampleDataFrame.gbhu_id.name] = inv_id
             samples_dataframe_list.append(sample_df)
@@ -289,12 +304,12 @@ async def get_test_series(
     filtered_gbhu = nadag_data.investigations.copy().dropna(subset=[FIELD.sample.metode_key]).reset_index(drop=True)
 
     filtered_gbhu[FIELD.sample.href] = (
-        filtered_gbhu[FIELD.sample.metode_key].apply(lambda x: x[0].get(FIELD.sample.href)).to_list()
+        filtered_gbhu[FIELD.sample.metode_key].apply(lambda x: safe_first(x, {}).get(FIELD.sample.href)).to_list()
     )
 
     responses = await http_client.get_href_list(filtered_gbhu.href.to_list())
 
-    sample_series = [[feat["properties"] for feat in response.get("features", [])] for response in responses]
+    sample_series = [safe_extract_feature_list(response) for response in responses]
 
     sample_series_locations = filtered_gbhu[SampleDataFrame.location_id.value].to_list()
     sample_series_investigations = filtered_gbhu[FIELD.id_field].to_list()
@@ -486,7 +501,19 @@ async def fetch_from_location_ids(location_ids: list[str]) -> NadagData:
             for lid in location_ids
         ]
         resp = await nadag_client.get_href_list(href_list)
-        investigations = pd.concat([PaginatedResponse(**rr).to_gdf() for rr in resp])
+        valid_pages = []
+        for rr in resp:
+            if not isinstance(rr, dict) or "features" not in rr:
+                logger.warning("Skipping invalid response when building investigations from location IDs.")
+                continue
+            try:
+                valid_pages.append(PaginatedResponse(**rr).to_gdf())
+            except Exception as e:
+                logger.warning(f"Skipping malformed paginated response: {e}")
+                continue
+        if not valid_pages:
+            raise RuntimeError("No valid investigation responses received for the given location IDs.")
+        investigations = pd.concat(valid_pages)
         investigations = investigations.set_crs(settings.API_CRS, allow_override=True).to_crs(settings.DEFAULT_CRS)
 
         temp_data = NadagData(bounds=locations.total_bounds, locations=locations, investigations=investigations)
@@ -525,7 +552,7 @@ def get_sounding_by_id(
     if response is None:
         return pd.DataFrame()
 
-    df = pd.DataFrame(gpd.GeoDataFrame.from_features(response["features"]).drop(columns="geometry"))
+    df = pd.DataFrame(gpd.GeoDataFrame.from_features(safe_extract_features(response)).drop(columns="geometry"))
     df["method_type"] = method_type
     method_data = df.reset_index(drop=True)
     method_data = case_insensitive_rename(method_data, MethodDataDataFrame.column_mapper())

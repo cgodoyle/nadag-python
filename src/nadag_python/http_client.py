@@ -18,7 +18,7 @@ from .data_models import (
     PaginatedResponse,
 )
 from .logging import get_module_logger
-from .utils import clean_url
+from .utils import clean_url, safe_extract_features, safe_extract_properties, safe_first
 
 TIMEOUT = httpx.Timeout(
     connect=settings.API_TIMEOUT,
@@ -260,7 +260,11 @@ class NadagHTTPClient:
 
         # Check if there are more pages
         next_link = next(
-            (link["href"] for link in first_data.get("links", []) if link.get("rel") == "next"),
+            (
+                link.get("href")
+                for link in first_data.get("links", [])
+                if link.get("rel") == "next" and link.get("href")
+            ),
             None,
         )
 
@@ -274,7 +278,7 @@ class NadagHTTPClient:
 
         if offset_key and isinstance(number_matched, int):
             # Use concurrent offset-based pagination
-            start_offset = int(parsed_next_q[offset_key][0])
+            start_offset = int(safe_first(parsed_next_q.get(offset_key, []), 0))
             offsets = range(start_offset, number_matched, page_size)
 
             logger.debug(f"Using concurrent pagination: {len(list(offsets))} pages, concurrency={max_concurrency}")
@@ -299,7 +303,11 @@ class NadagHTTPClient:
                     data = await self._fetch_page(client, current_url)
                 yield PaginatedResponse(**data)
                 current_url = next(
-                    (link["href"] for link in data.get("links", []) if link.get("rel") == "next"),
+                    (
+                        link.get("href")
+                        for link in data.get("links", [])
+                        if link.get("rel") == "next" and link.get("href")
+                    ),
                     None,
                 )
 
@@ -411,14 +419,20 @@ class NadagHTTPClient:
         """Process a list of API responses to extract feature properties."""
         properties = []
         for feature_dict in response_list:
-            if feature_dict is None or "features" not in feature_dict:
-                logger.warning("Skipping invalid or empty API response.")
+            if feature_dict is None:
+                logger.warning("Skipping None API response.")
                 continue
-            feature_list = feature_dict["features"]
+            feature_list = safe_extract_features(feature_dict)
+            if not feature_list:
+                logger.warning("Skipping API response with no valid features.")
+                continue
             feature_properties = []
             for item in feature_list:
-                item_properties = item["properties"]
-                item_properties[FIELD.feature_id] = item["id"]
+                item_properties = safe_extract_properties(item)
+                if item_properties is None:
+                    logger.debug("Skipping feature with missing/malformed properties.")
+                    continue
+                item_properties[FIELD.feature_id] = item.get("id")
                 feature_properties.append(item_properties)
 
             properties.append(feature_properties)

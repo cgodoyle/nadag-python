@@ -33,6 +33,9 @@ dev = [
   "ipykernel",
   "python-semantic-release>=10.5,<11",
   "rich",
+  "pytest",
+  "pytest-asyncio",
+  "respx",
 ]
 
 [tool.setuptools.packages.find]
@@ -88,3 +91,7 @@ exclude_commit_patterns = [
 changelog_file = "CHANGELOG.md"
 output_format = "md"
 mask_initial_release = false
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
