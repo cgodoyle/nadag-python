@@ -261,7 +261,7 @@ def create_intervals_from_comments(input_df: pd.DataFrame) -> pd.DataFrame:
 
         str_target_codes = [str(tc) for tc in target_codes]
         df[event_col_name] = df["comment_code_str"].apply(
-            lambda comment_str: any(target_code in comment_str for target_code in str_target_codes)
+            lambda comment_str, _codes=str_target_codes: any(target_code in comment_str for target_code in _codes)
         )
 
     for base_col_name in interval_types:
@@ -441,13 +441,14 @@ def get_sample_depth(sample: pd.Series) -> float:
         float: The calculated depth value for the sample based on the provided depth_top and depth_base values, following the defined logic for handling different cases of missing or equal depth values.
 
     """
-    if (sample[SampleDataFrame.depth_top.name] > sample[SampleDataFrame.depth_base.name]) and (
-        sample[SampleDataFrame.depth_base.name] == 0
+    if (
+        (
+            (sample[SampleDataFrame.depth_top.name] > sample[SampleDataFrame.depth_base.name])
+            and (sample[SampleDataFrame.depth_base.name] == 0)
+        )
+        or (pd.isna(sample[SampleDataFrame.depth_base.name]) and not pd.isna(sample[SampleDataFrame.depth_top.name]))
+        or sample[SampleDataFrame.depth_top.name] == sample[SampleDataFrame.depth_base.name]
     ):
-        depth = sample[SampleDataFrame.depth_top.name]
-    elif pd.isna(sample[SampleDataFrame.depth_base.name]) and not pd.isna(sample[SampleDataFrame.depth_top.name]):
-        depth = sample[SampleDataFrame.depth_top.name]
-    elif sample[SampleDataFrame.depth_top.name] == sample[SampleDataFrame.depth_base.name]:
         depth = sample[SampleDataFrame.depth_top.name]
     else:
         try:
@@ -777,7 +778,7 @@ def extract_method_ids_from_investigations(
 
     # Extract method IDs
     method_rows = []
-    for idx, row in gdf_filtered.iterrows():
+    for _idx, row in gdf_filtered.iterrows():
         geometry = row.geometry
         location_id = row.get(MethodDataFrame.location_id.value)
         method_ids = []

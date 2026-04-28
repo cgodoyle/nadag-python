@@ -1,6 +1,7 @@
 import asyncio
 import logging
-from typing import Any, AsyncGenerator, Optional
+from collections.abc import AsyncGenerator
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -116,7 +117,7 @@ class NadagHTTPClient:
             logger.warning(f"API status check failed: {e}")
             return False
 
-    def build_collection_url(self, collection: str, query_params: Optional[dict[str, Any]] = None) -> str:
+    def build_collection_url(self, collection: str, query_params: dict[str, Any] | None = None) -> str:
         """Build a URL for querying a collection with optional query parameters.
 
         Args:
@@ -157,7 +158,7 @@ class NadagHTTPClient:
             response.raise_for_status()
             return response.json()
 
-    async def get_features_from_urls(self, urls: list[str], chunk_size: Optional[int] = None) -> list[dict]:
+    async def get_features_from_urls(self, urls: list[str], chunk_size: int | None = None) -> list[dict]:
         """Fetch features from a list of URLs asynchronously.
 
         Raises an error if any URL fails after retries.
@@ -228,9 +229,9 @@ class NadagHTTPClient:
     async def get_features_paginated(
         self,
         url: str,
-        params: Optional[dict] = None,
+        params: dict | None = None,
         page_size: int = settings.API_PAGE_SIZE,
-        max_concurrency: Optional[int] = None,
+        max_concurrency: int | None = None,
     ) -> AsyncGenerator[PaginatedResponse, None]:
         """Fetch features from a collection in a paginated manner.
 
@@ -312,7 +313,7 @@ class NadagHTTPClient:
                 )
 
     @api_retry()
-    async def _fetch_page(self, client: httpx.AsyncClient, url: str, params: Optional[dict] = None) -> dict:
+    async def _fetch_page(self, client: httpx.AsyncClient, url: str, params: dict | None = None) -> dict:
         """Fetch a single page with retry support."""
         response = await client.get(url, params=params)
         response.raise_for_status()
@@ -350,7 +351,7 @@ class NadagHTTPClient:
                     response.raise_for_status()
                     data = response.json()
 
-                    if "features" in data and data["features"]:
+                    if data.get("features"):
                         all_features.extend(data["features"])
 
                     next_url = None
@@ -377,7 +378,7 @@ class NadagHTTPClient:
         else:
             return data
 
-    async def get_href_list(self, href_list: list[str], chunk_size: Optional[int] = None) -> list[dict]:
+    async def get_href_list(self, href_list: list[str], chunk_size: int | None = None) -> list[dict]:
         """Fetch a list of URLs asynchronously.
 
         Raises an error if any URL fails after retries.

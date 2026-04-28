@@ -283,7 +283,7 @@ def safe_first(collection: Any, default: Any = None) -> Any:
     return collection[0]
 
 
-def safe_iloc(df: pd.DataFrame | pd.core.groupby.DataFrameGroupBy, index: int = 0, default: Any = None) -> Any:
+def safe_iloc(df: pd.DataFrame, index: int = 0, default: Any = None) -> Any:
     """Safely index into a DataFrame with ``.iloc``.
 
     Args:

@@ -54,6 +54,22 @@ possibly-missing-import = "error"
 line-length = 120
 target-version = "py312"
 
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+ignore = [
+    "E501",    # line too long — handled by formatter
+    "SIM108",  # ternary operator — readability preference
+    "SIM114",  # combine if branches — readability preference
+    "B008",    # function call in default arg — used by pydantic
+    "B905",    # zip() without strict — not needed for same-length iterables from our code
+    "UP007",   # X | Y union syntax — already using it, but some places use Optional
+    "RUF005",  # unpacking instead of concatenation — readability preference
+    "RUF012",  # mutable class variable — false positives with dataclass fields
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["nadag_python"]
+
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 

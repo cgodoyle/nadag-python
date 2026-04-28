@@ -5,7 +5,7 @@ from datetime import datetime
 from enum import StrEnum
 from os import PathLike
 from pathlib import Path
-from typing import Any, Literal, Optional, Self, Union
+from typing import Any, Literal, Self, Union
 
 import geopandas as gpd
 import pandas as pd
@@ -333,6 +333,8 @@ class NadagData:
         """
 
         location_id = investigation[MethodDataFrame.location_id]
+        from .utils import safe_iloc  # lazy import to avoid circular dependency
+
         location = safe_iloc(self.locations.loc[self.locations[FIELD.id_field] == location_id])
         if location is None:
             logger.warning(
@@ -430,11 +432,11 @@ class PaginatedResponse(BaseModel):
     """
 
     type: Literal["FeatureCollection"] = "FeatureCollection"
-    numberReturned: Optional[int] = Field(None, ge=0)
-    numberMatched: Optional[int] = Field(None, ge=0)
-    timeStamp: Optional[str] = None
+    numberReturned: int | None = Field(None, ge=0)
+    numberMatched: int | None = Field(None, ge=0)
+    timeStamp: str | None = None
     features: list[dict[str, Any]] = Field(default_factory=list)
-    links: Optional[list[dict[str, Any]]] = None
+    links: list[dict[str, Any]] | None = None
 
     @field_validator("features")
     @classmethod
@@ -587,24 +589,24 @@ class Method(BaseModel):
     geometry: Union[dict, Any] = Field(BaseGeometry, description="GeoJSON compatible geometry")
     method_id: str
     gbhu_id: str
-    location_name: Optional[str] = None
+    location_name: str | None = None
     location_id: str
-    depth: Optional[float] = None
-    stop_code: Optional[int] = None
-    date_investigation_start: Optional[datetime] = None
-    date_adquisition: Optional[datetime] = None
-    number_of_boreholes: Optional[int] = None
-    elevation: Optional[float] = None
-    elevation_reference: Optional[str] = None
-    external_id: Optional[str] = None
-    quick_clay_detection: Optional[str] = None
-    description: Optional[str] = None
-    documents: Optional[str] = None
-    interpretations: Optional[str] = None
-    investigation_area_id: Optional[str] = None
-    depth_to_rock_quality: Optional[float] = None
-    depth_to_rock: Optional[float] = None
-    method_type_nadag: Optional[str] = None
+    depth: float | None = None
+    stop_code: int | None = None
+    date_investigation_start: datetime | None = None
+    date_adquisition: datetime | None = None
+    number_of_boreholes: int | None = None
+    elevation: float | None = None
+    elevation_reference: str | None = None
+    external_id: str | None = None
+    quick_clay_detection: str | None = None
+    description: str | None = None
+    documents: str | None = None
+    interpretations: str | None = None
+    investigation_area_id: str | None = None
+    depth_to_rock_quality: float | None = None
+    depth_to_rock: float | None = None
+    method_type_nadag: str | None = None
     data: pd.DataFrame = Field(default_factory=pd.DataFrame, description="Sounding data as DataFrame")
 
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)

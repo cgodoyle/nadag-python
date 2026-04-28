@@ -136,7 +136,7 @@ def load_nadag_config(filename: str) -> NadagConfig:
             f"3. {project_root_path.absolute()} (Project Root)"
             "Basic configuration could not be loaded either due to:"
             f"{e}"
-        )
+        ) from e
 
 
 class Settings(BaseSettings):

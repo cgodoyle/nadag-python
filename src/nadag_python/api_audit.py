@@ -16,15 +16,14 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import sys
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from difflib import SequenceMatcher, get_close_matches
 
 import httpx
 
 from .config import Settings
-from .data_models import FIELD, ApiSchemaConfig, MethodDataDataFrame, MethodDataFrame, SampleDataFrame
+from .data_models import FIELD, MethodDataDataFrame, MethodDataFrame, SampleDataFrame
 
 # ---------------------------------------------------------------------------
 # Lazy import of rich — graceful fallback to plain print
@@ -305,7 +304,7 @@ def compare_all(
     counts["new_api_fields"] = sum(len(v) for v in new_api.values())
 
     return AuditReport(
-        timestamp=datetime.now(timezone.utc).isoformat(),
+        timestamp=datetime.now(UTC).isoformat(),
         api_base_url=API_BASE_URL,
         collections_fetched=api_collections,
         model_field_results=results,
@@ -455,7 +454,7 @@ def _make_serializable(obj: object) -> object:
     if isinstance(obj, (list, tuple)):
         return [_make_serializable(i) for i in obj]
     if hasattr(obj, "__dataclass_fields__"):
-        return {k: _make_serializable(v) for k, v in asdict(obj).items()}
+        return {k: _make_serializable(v) for k, v in asdict(obj).items()}  # ty: ignore[invalid-argument-type]
     return obj
 
 

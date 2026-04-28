@@ -1,6 +1,5 @@
 import asyncio
 import time
-from typing import Optional
 
 import geopandas as gpd
 import pandas as pd
@@ -53,7 +52,7 @@ async def get_features_in_bbox_single(
     bbox: BoundingBox,
     collection: str,
     limit: int = 1000,
-    pagination_concurrency: Optional[int] = None,
+    pagination_concurrency: int | None = None,
 ) -> PaginatedResponse:
     """
     Fetch features from a specified collection within a bounding box.
@@ -95,7 +94,7 @@ async def get_features_in_bbox(
     collection: str,
     limit: int = 1000,
     max_dist_query: int | float = settings.API_MAX_DIST_QUERY,
-    pagination_concurrency: Optional[int] = None,
+    pagination_concurrency: int | None = None,
 ) -> PaginatedResponse:
     """
     Fetch features from a specified collection within a bounding box, splitting the query
@@ -404,7 +403,7 @@ async def get_method_and_sample_nadag_data(http_client: NadagHTTPClient, temp_da
 async def fetch_from_bounds(
     bounds: BoundingBox,
     max_distance_query: int | float = settings.API_MAX_DIST_QUERY,
-    pagination_concurrency: Optional[int] = None,
+    pagination_concurrency: int | None = None,
 ) -> NadagData:
     """
     Fetch features from the API within the specified bounds.
@@ -566,10 +565,10 @@ def get_sounding_by_id(
 
 def get_sounding_urls(
     method_type: str,
-    method_id: Optional[str] = None,
-    location_id: Optional[str] = None,
-    gbhu_id: Optional[str] = None,
-    investigation_area_id: Optional[str] = None,
+    method_id: str | None = None,
+    location_id: str | None = None,
+    gbhu_id: str | None = None,
+    investigation_area_id: str | None = None,
 ) -> dict:
     """
     Get the urls for the different tables in the NADAG API for a given item.
