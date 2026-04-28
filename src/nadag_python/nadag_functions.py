@@ -8,7 +8,6 @@ from shapely.geometry import box
 from .config import CRS, settings
 from .data_models import (
     FIELD,
-    BoundingBox,
     MethodDataDataFrame,
     NadagData,
     PaginatedResponse,
@@ -23,6 +22,7 @@ from .postprocessing import (
     merge_sample_dataframes,
     postprocess_methods_data_and_info,
 )
+from .types import BoundingBox
 from .utils import (
     case_insensitive_rename,
     extract_nested_key_values,

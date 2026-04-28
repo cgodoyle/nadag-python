@@ -5,8 +5,8 @@ import geopandas as gpd
 import pandas as pd
 from shapely.geometry import box
 
-from .data_models import BoundingBox
 from .logging import get_module_logger
+from .types import BoundingBox
 
 logger = get_module_logger(__name__)
 

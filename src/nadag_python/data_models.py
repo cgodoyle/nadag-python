@@ -14,13 +14,9 @@ from shapely.geometry.base import BaseGeometry
 
 from .config import nadag_config, settings
 from .logging import get_module_logger
+from .utils import safe_iloc
 
 logger = get_module_logger(__name__)
-
-GeoDataFrameType = Union[gpd.GeoDataFrame, pd.DataFrame]
-BoundingBox = (
-    list[int | float] | tuple[int | float, int | float, int | float, int | float]
-)  # [x_min, y_min, x_max, y_max]
 
 
 class ModelEnum(StrEnum):
@@ -255,8 +251,6 @@ class NadagData:
             logger.warning("Soundings info is empty. Returning empty DataFrame.")
             return {}
 
-        from .utils import safe_iloc  # lazy import to avoid circular dependency
-
         method_id_field = MethodDataFrame.method_id.value
 
         sounding_info = self.methods_info.query(f"{method_id_field} == @method_id")
@@ -333,7 +327,6 @@ class NadagData:
         """
 
         location_id = investigation[MethodDataFrame.location_id]
-        from .utils import safe_iloc  # lazy import to avoid circular dependency
 
         location = safe_iloc(self.locations.loc[self.locations[FIELD.id_field] == location_id])
         if location is None:

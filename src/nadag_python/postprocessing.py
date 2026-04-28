@@ -9,7 +9,6 @@ from nadag_python.utils import normalize_columns
 
 from .data_models import (
     FIELD,
-    GeoDataFrameType,
     GrundigMethodDataFrame,
     GrundigSampleDataFrame,
     MethodDataDataFrame,
@@ -20,6 +19,7 @@ from .data_models import (
     SamplesConfig,
 )
 from .logging import get_module_logger
+from .types import GeoDataFrameType
 
 logger = get_module_logger(__name__)
 
