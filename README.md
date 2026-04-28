@@ -21,6 +21,23 @@ pip install git+https://github.com/cgodoyle/nadag-python.git
 
 ## Usage
 
+## API Audit Tool
+
+The package includes a developer tool that compares the local data models against the live NADAG API to detect field mismatches, typos, and schema changes:
+
+```bash
+pip install nadag_python[dev]
+python -m nadag_python.api_audit
+```
+
+Optionally save a JSON report:
+
+```bash
+python -m nadag_python.api_audit --output report.json
+```
+
+See the [full documentation](docs/04_api_audit.md) for details.
+
 ## Considerations
 
 ## Versioning and releases

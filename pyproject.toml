@@ -31,7 +31,8 @@ dev = [
     "zensical",
     "mkdocstrings-python",
   "ipykernel",
-  "python-semantic-release>=10.5,<11"
+  "python-semantic-release>=10.5,<11",
+  "rich",
 ]
 
 [tool.setuptools.packages.find]
