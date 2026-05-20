@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 <!-- version list -->
 
+## v0.1.1 (2026-05-20)
+
+### Bug Fixes
+
+- Correct prøveseriedel field name to match updated API
+  ([`a5569cd`](https://github.com/cgodoyle/nadag-python/commit/a5569cd6f369a704082dfffa449d617f76327dce))
+
+### Refactoring
+
+- **audit**: Improve severity for indexed fields and group nested fields in report
+  ([`72bd034`](https://github.com/cgodoyle/nadag-python/commit/72bd034640e388f88d576247a9a927634c831f3c))
+
+
 ## v0.1.0 (2026-04-28)
 
 ### Bug Fixes
