@@ -87,6 +87,9 @@ class FieldMatch:
     fuzzy_matches: dict[str, list[tuple[str, float]]] = field(
         default_factory=dict
     )  # collection -> [(api_field, score)]
+    indexed_variants: dict[str, list[str]] = field(
+        default_factory=dict
+    )  # collection -> [api_fields starting with model_field.] (nested/indexed)
     severity: str = "ok"  # ok, warning, critical
 
 
@@ -229,6 +232,35 @@ def get_model_fields() -> dict[str, str]:
 # ---------------------------------------------------------------------------
 
 
+def _group_fields_by_prefix(fields: list[str]) -> list[str]:
+    """Group dotted fields by their prefix for compact display.
+
+    Fields sharing a common prefix (before the first dot) with 2+ siblings
+    are collapsed into: ``prefix.{suffix1, suffix2, ...}``.
+    Fields without a dot or with a unique prefix are listed as-is.
+    """
+    from collections import OrderedDict
+
+    groups: OrderedDict[str | None, list[str]] = OrderedDict()
+    for f in fields:
+        if "." in f:
+            prefix, suffix = f.split(".", 1)
+            groups.setdefault(prefix, []).append(suffix)
+        else:
+            # Use None-keyed bucket with field name to preserve ordering
+            groups.setdefault(None, []).append(f)
+
+    result: list[str] = []
+    for prefix, suffixes in groups.items():
+        if prefix is None:
+            result.extend(suffixes)
+        elif len(suffixes) == 1:
+            result.append(f"{prefix}.{suffixes[0]}")
+        else:
+            result.append(f"{prefix}.{{{', '.join(suffixes)}}}")
+    return result
+
+
 def _similarity(a: str, b: str) -> float:
     return SequenceMatcher(None, a, b).ratio()
 
@@ -281,7 +313,15 @@ def compare_all(
                         score = _similarity(model_field, candidate)
                         for col in all_api_fields[candidate]:
                             match.fuzzy_matches.setdefault(col, []).append((candidate, round(score, 3)))
-                    match.severity = "critical"
+                    # If any API field starts with "model_field." it means the
+                    # field exists in indexed form (e.g. field.1.href). This is
+                    # expected behavior for nested fields — downgrade to warning.
+                    indexed_prefix = model_field + "."
+                    for col in api_collections:
+                        variants = [f for f in col.fields if f.startswith(indexed_prefix)]
+                        if variants:
+                            match.indexed_variants[col.collection] = sorted(variants)
+                    match.severity = "warning" if match.indexed_variants else "critical"
                 else:
                     match.severity = "warning"
 
@@ -355,6 +395,9 @@ def _print_rich(report: AuditReport) -> None:
         console.rule("[bold yellow]WARNING — Fields not found in API[/bold yellow]")
         for r in warnings:
             console.print(f"  [yellow]\\[WARNING][/yellow] {r.model_field}  (from {r.source})")
+            if r.indexed_variants:
+                for col, variants in r.indexed_variants.items():
+                    console.print(f"    [dim]↳ Found as indexed keys in {col}:[/dim] {', '.join(variants)}")
         console.print()
 
     # New API fields
@@ -364,7 +407,7 @@ def _print_rich(report: AuditReport) -> None:
         table.add_column("Collection")
         table.add_column("New Fields")
         for col, fields in sorted(report.new_api_fields.items()):
-            table.add_row(col, ", ".join(fields))
+            table.add_row(col, ", ".join(_group_fields_by_prefix(fields)))
         console.print(table)
         console.print()
 
@@ -417,6 +460,9 @@ def _print_plain(report: AuditReport) -> None:
         print("-" * 60)
         for r in warnings:
             print(f"  [WARNING] {r.model_field}  (from {r.source})")
+            if r.indexed_variants:
+                for col, variants in r.indexed_variants.items():
+                    print(f"    -> Found as indexed keys in {col}: {', '.join(variants)}")
         print()
 
     if report.new_api_fields:
@@ -424,7 +470,7 @@ def _print_plain(report: AuditReport) -> None:
         print("  INFO — New API fields not in model")
         print("-" * 60)
         for col, fields in sorted(report.new_api_fields.items()):
-            print(f"  {col}: {', '.join(fields)}")
+            print(f"  {col}: {', '.join(_group_fields_by_prefix(fields))}")
         print()
 
     s = report.summary
