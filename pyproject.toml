@@ -111,3 +111,6 @@ mask_initial_release = false
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "slow: marks tests that call the live API (deselect with '-m \"not slow\"')",
+]

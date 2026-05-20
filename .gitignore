@@ -21,3 +21,6 @@ test*.*
 site/
 
 benchmark_runs/
+AGENTS.md
+DEV_QUICKSTART.md
+TODO_api_resilience.md
