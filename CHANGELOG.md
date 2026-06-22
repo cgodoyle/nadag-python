@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 <!-- version list -->
 
+## v0.2.0 (2026-06-22)
+
+### Features
+
+- Enhance argument parsing in example_script and update location_id field names due to new change in
+  API
+  ([`f352242`](https://github.com/cgodoyle/nadag-python/commit/f35224260cfe448c36a490c3db49736d8de5da99))
+
+
 ## v0.1.1 (2026-05-20)
 
 ### Bug Fixes
