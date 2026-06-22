@@ -165,28 +165,32 @@ def _extra_mapper_keys(source_name: str) -> list[tuple[str, str]]:
     return [(k, source_name) for k in extras]
 
 
-def get_model_fields() -> dict[str, str]:
+def _add_model_field(fields: dict[str, list[str]], field_name: str, source: str) -> None:
+    fields.setdefault(field_name, []).append(source)
+
+
+def get_model_fields() -> dict[str, list[str]]:
     """
     Collect all field names referenced by the data models.
-    Returns dict: field_name -> source description.
+    Returns dict: field_name -> source descriptions.
     """
-    fields: dict[str, str] = {}
+    fields: dict[str, list[str]] = {}
 
     # MethodDataFrame — fields from geotekniskborehull + geotekniskborehullunders
     for value, source in _enum_fields(MethodDataFrame, "MethodDataFrame"):
-        fields[value] = source
+        _add_model_field(fields, value, source)
 
     # MethodDataDataFrame — fields from sounding data collections
     for value, source in _enum_fields(MethodDataDataFrame, "MethodDataDataFrame"):
-        fields[value] = source
+        _add_model_field(fields, value, source)
 
     # Extra column mapper keys (foreign key fields in sounding data)
     for value, source in _extra_mapper_keys("MethodDataDataFrame.column_mapper"):
-        fields[value] = source
+        _add_model_field(fields, value, source)
 
     # SampleDataFrame — fields from sample collections
     for value, source in _enum_fields(SampleDataFrame, "SampleDataFrame"):
-        fields[value] = source
+        _add_model_field(fields, value, source)
 
     # ApiSchemaConfig — navigation hrefs, id fields, metode keys
     schema_fields = {
@@ -195,20 +199,21 @@ def get_model_fields() -> dict[str, str]:
         FIELD.gbu_id: "ApiSchemaConfig.gbu_id",
         FIELD.feature_id: "ApiSchemaConfig.feature_id",
     }
-    fields.update(schema_fields)
+    for value, source in schema_fields.items():
+        _add_model_field(fields, value, source)
 
     # Method-specific fields from MethodFields
     for method in FIELD.methods:
-        fields[method.metode_key] = f"ApiSchemaConfig.{method.name}.metode_key"
-        fields[method.observasjon] = f"ApiSchemaConfig.{method.name}.observasjon"
-        fields[method.id_ref] = f"ApiSchemaConfig.{method.name}.id_ref"
-        fields[method.parent_ref] = f"ApiSchemaConfig.{method.name}.parent_ref"
+        _add_model_field(fields, method.metode_key, f"ApiSchemaConfig.{method.name}.metode_key")
+        _add_model_field(fields, method.observasjon, f"ApiSchemaConfig.{method.name}.observasjon")
+        _add_model_field(fields, method.id_ref, f"ApiSchemaConfig.{method.name}.id_ref")
+        _add_model_field(fields, method.parent_ref, f"ApiSchemaConfig.{method.name}.parent_ref")
 
     # Sample-specific fields from SampleFields
     sample = FIELD.sample
-    fields[sample.metode_key] = "ApiSchemaConfig.sample.metode_key"
-    fields[sample.serie_href] = "ApiSchemaConfig.sample.serie_href"
-    fields[sample.data_href] = "ApiSchemaConfig.sample.data_href"
+    _add_model_field(fields, sample.metode_key, "ApiSchemaConfig.sample.metode_key")
+    _add_model_field(fields, sample.serie_href, "ApiSchemaConfig.sample.serie_href")
+    _add_model_field(fields, sample.data_href, "ApiSchemaConfig.sample.data_href")
 
     # Filter out purely internal/computed fields that are not API property names
     internal_fields = {
@@ -267,7 +272,7 @@ def _similarity(a: str, b: str) -> float:
 
 def compare_all(
     api_collections: list[CollectionFields],
-    model_fields: dict[str, str],
+    model_fields: dict[str, list[str]],
 ) -> AuditReport:
     """Run the full comparison: model fields vs API, and API vs model."""
 
@@ -289,8 +294,8 @@ def compare_all(
     results: list[FieldMatch] = []
     referenced_api_fields: set[str] = set()
 
-    for model_field, source in model_fields.items():
-        match = FieldMatch(model_field=model_field, source=source)
+    for model_field, sources in model_fields.items():
+        match = FieldMatch(model_field=model_field, source=", ".join(sources))
 
         # Exact match
         if model_field in all_api_fields:

@@ -534,7 +534,7 @@ class MethodDataFrame(ModelEnum):
 
     geometry = "geometry"
     method_id = "method_id"
-    location_id = "underspkt_fk"
+    location_id = "undersPkt.title"
     gbhu_id = FIELD.model_gbhu_id
     investigation_area_id = "opprinneligGeotekniskUndersID"
     location_name = "boreNr"
@@ -647,7 +647,7 @@ class MethodDataDataFrame(ModelEnum):
 
 
 class SampleDataFrame(ModelEnum):
-    location_id = "underspkt_fk"
+    location_id = "undersPkt.title"
     sampling_method = "prøveMetode"
     sample_name = "prøveseriedelNavn"
     depth_top = "fraLengde"
@@ -678,7 +678,7 @@ class SampleDataFrame(ModelEnum):
 
     @classmethod
     def column_mapper(cls):
-        column_mapper = {member.value: member.name for member in cls}
+        column_mapper: dict[str, str] = {member.value: member.name for member in cls}
         column_mapper[cls.location_id.name] = cls.location_id.name
         return column_mapper
 
@@ -750,7 +750,7 @@ class GrundigSampleDataFrame(ModelEnum):
 
     @classmethod
     def column_mapper(cls):
-        column_mapper = {member.value: member.name for member in cls}
+        column_mapper: dict[str, str] = {member.value: member.name for member in cls}
         column_mapper[cls.location_id.name] = cls.location_id.name
         return column_mapper
 

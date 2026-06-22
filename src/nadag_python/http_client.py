@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from collections.abc import AsyncGenerator
-from typing import Any
+from typing import Any, cast
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -130,7 +130,7 @@ class NadagHTTPClient:
         Example:
             client.build_collection_url(
                 "geotekniskborehullunders",
-                {"underspkt_fk": "6d887f7b-5f3c-450c-8e4b-c038b912c170"}
+                {"undersPkt.title": "6d887f7b-5f3c-450c-8e4b-c038b912c170"}
                 )
         """
         base = self.query_url.format(collection=collection)
@@ -173,7 +173,7 @@ class NadagHTTPClient:
         Raises:
             RuntimeError: If any URLs fail after all retry attempts.
         """
-        all_results = []
+        all_results: list[dict] = []
         failed_urls = []
 
         results = await asyncio.gather(
@@ -185,7 +185,7 @@ class NadagHTTPClient:
             if isinstance(result, Exception):
                 failed_urls.append((urls[i], result))
             else:
-                all_results.append(result)
+                all_results.append(cast(dict, result))
 
         if failed_urls:
             logger.warning(
@@ -393,7 +393,7 @@ class NadagHTTPClient:
         Raises:
             RuntimeError: If any URLs fail after all retry attempts.
         """
-        all_results = []
+        all_results: list[dict] = []
         failed_urls = []
 
         results = await asyncio.gather(
@@ -405,7 +405,7 @@ class NadagHTTPClient:
             if isinstance(result, Exception):
                 failed_urls.append((href_list[i], result))
             else:
-                all_results.append(result)
+                all_results.append(cast(dict, result))
 
         if failed_urls:
             raise RuntimeError(

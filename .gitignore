@@ -21,6 +21,8 @@ test*.*
 site/
 
 benchmark_runs/
+data/
 AGENTS.md
 DEV_QUICKSTART.md
 TODO_api_resilience.md
+TODO.md

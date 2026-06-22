@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 import os
 import sys
@@ -9,9 +10,25 @@ import pandas as pd
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "src")))
 from nadag_python.nadag_functions import fetch_from_bounds
 
+DEFAULT_BOUNDS = [270756, 6663604, 270882, 6663697]
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--bounds",
+        nargs=4,
+        type=float,
+        metavar=("MIN_X", "MIN_Y", "MAX_X", "MAX_Y"),
+        default=DEFAULT_BOUNDS,
+        help="Bounding box as four floats: min_x min_y max_x max_y",
+    )
+    return parser.parse_args()
+
 
 async def main():
-    bounds = [270756.3025, 6663604.1026, 270882.3954, 6663697.4705]
+    args = parse_args()
+    bounds = args.bounds
     start_time = perf_counter()
     nadag_data = await fetch_from_bounds(bounds=bounds)
     end_time = perf_counter()

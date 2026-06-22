@@ -496,7 +496,9 @@ async def fetch_from_location_ids(location_ids: list[str]) -> NadagData:
         )
         locations = locations.set_crs(settings.API_CRS, allow_override=True).to_crs(settings.DEFAULT_CRS)
         href_list = [
-            nadag_client.build_collection_url(collection="geotekniskborehullunders", query_params={"underspkt_fk": lid})
+            nadag_client.build_collection_url(
+                collection="geotekniskborehullunders", query_params={"undersPkt.title": lid}
+            )
             for lid in location_ids
         ]
         resp = await nadag_client.get_href_list(href_list)
