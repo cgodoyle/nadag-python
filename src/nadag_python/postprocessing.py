@@ -356,6 +356,8 @@ def get_samples_dataframe(
 
     merged = merged.rename(columns=column_mapper).drop(columns=cols_to_drop, errors="ignore").reset_index(drop=True)
     merged[SampleDataFrame.depth.name] = merged.apply(get_sample_depth, axis=1)
+    # Keep z as a legacy alias for downstream consumers.
+    merged[FIELD.z] = merged[SampleDataFrame.location_elevation.name]
     if aggregate:
         merged = aggregate_samples(merged, id_field=SampleDataFrame.method_id.name)
     merged = gpd.GeoDataFrame(merged, crs=locs.crs)
