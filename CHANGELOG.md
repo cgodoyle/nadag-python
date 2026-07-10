@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 <!-- version list -->
 
+## v0.2.1 (2026-07-10)
+
+### Bug Fixes
+
+- Add legacy z alias to samples dataframe
+  ([`4a9dd44`](https://github.com/cgodoyle/nadag-python/commit/4a9dd443460c213176f2e7b1444f401ae6891d2e))
+
+
 ## v0.2.0 (2026-06-22)
 
 ### Features
