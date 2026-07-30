@@ -499,7 +499,7 @@ def print_report(report: AuditReport) -> None:
 def _make_serializable(obj: object) -> object:
     """Convert dataclass / set types to JSON-serializable structures."""
     if isinstance(obj, set):
-        return sorted(obj)
+        return sorted(obj, key=str)
     if isinstance(obj, dict):
         return {k: _make_serializable(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):

@@ -303,12 +303,21 @@ class NadagData:
             sounding_data[MethodDataDataFrame.depth.name] = [0]
             sounding_data[MethodDataDataFrame.penetration_force.name] = [0]
 
-        return_dict = self._setup_method_fields(investigation, sounding_data, method_id, gbhu_id)
+        if MethodDataFrame.is_empty_sounding.name in sounding_info.columns:
+            is_empty_sounding = bool(sounding_info[MethodDataFrame.is_empty_sounding.name].iloc[0])
+        else:
+            is_empty_sounding = False
+        return_dict = self._setup_method_fields(investigation, sounding_data, method_id, gbhu_id, is_empty_sounding)
 
         return return_dict
 
     def _setup_method_fields(
-        self, investigation: pd.Series, sounding_data: pd.DataFrame, method_id: str, gbhu_id: str
+        self,
+        investigation: pd.Series,
+        sounding_data: pd.DataFrame,
+        method_id: str,
+        gbhu_id: str,
+        is_empty_sounding: bool = False,
     ) -> dict[str, Any]:
         """
         Helper function to set up the fields for a method query. This is separated from the main query_method function for better readability and maintainability.
@@ -362,6 +371,7 @@ class NadagData:
             MethodDataFrame.depth_to_rock_quality.name   : inv.get(MethodDataFrame.depth_to_rock_quality.value),
             MethodDataFrame.depth_to_rock.name           : inv.get(MethodDataFrame.depth_to_rock.value),
             MethodDataFrame.method_type_nadag.name       : investigation[MethodDataFrame.method_type_nadag.value],
+            MethodDataFrame.is_empty_sounding.name       : is_empty_sounding,
             MethodDataFrame.data.name                    : sounding_data,
         }
         # fmt: on
@@ -558,6 +568,7 @@ class MethodDataFrame(ModelEnum):
     borehole_inclination = "boretHelningsgrad"
     pre_boring_depth = "forboretLengde"
     pre_boring_start_depth = "forboretStartLengde"
+    is_empty_sounding = "is_empty_sounding"
     data = "data"
     cpt_info = "cpt_info"
 
@@ -600,6 +611,7 @@ class Method(BaseModel):
     depth_to_rock_quality: float | None = None
     depth_to_rock: float | None = None
     method_type_nadag: str | None = None
+    is_empty_sounding: bool = False
     data: pd.DataFrame = Field(default_factory=pd.DataFrame, description="Sounding data as DataFrame")
 
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
@@ -703,6 +715,7 @@ class GrundigMethodDataFrame(ModelEnum):
     depth_rock = MethodDataFrame.depth_to_rock.name
     depth_rock_quality = MethodDataFrame.depth_to_rock_quality.name
     investigation_area_id = MethodDataFrame.investigation_area_id.name
+    is_empty_sounding = MethodDataFrame.is_empty_sounding.name
 
     @classmethod
     def column_mapper(cls):

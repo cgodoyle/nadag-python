@@ -47,6 +47,17 @@ def add_empty_soundings(investigations, soundings_info) -> pd.DataFrame:
     """
 
     method_keys = [xx.metode_key for xx in FIELD.methods] + [FIELD.sample.metode_key]
+    is_empty_sounding_field = MethodDataFrame.is_empty_sounding.name
+
+    if soundings_info is None:
+        soundings_info = pd.DataFrame()
+    else:
+        soundings_info = soundings_info.copy()
+
+    if is_empty_sounding_field not in soundings_info.columns:
+        soundings_info[is_empty_sounding_field] = False
+    else:
+        soundings_info[is_empty_sounding_field] = soundings_info[is_empty_sounding_field].fillna(False).astype(bool)
 
     investigations_with_no_data = investigations[
         ~investigations.apply(
@@ -76,6 +87,7 @@ def add_empty_soundings(investigations, soundings_info) -> pd.DataFrame:
                     MethodDataFrame.method_type.value: MethodsConfig.GEOTEKNISKMETODE_TO_METHOD_TYPE_MAPPER.get(
                         xx.get(MethodDataFrame.method_type_nadag.value)
                     ),
+                    is_empty_sounding_field: True,
                 }
             )
             is not None
