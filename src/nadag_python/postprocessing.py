@@ -111,6 +111,7 @@ def add_empty_soundings(investigations, soundings_info) -> pd.DataFrame:
 def postprocess_methods_data_and_info(
     methods_info_in: dict[str, pd.DataFrame],
     methods_data_in: dict[str, pd.DataFrame],
+    investigations: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Post-processes the soundings data and info DataFrames to ensure correct data types and structure.
@@ -118,6 +119,7 @@ def postprocess_methods_data_and_info(
     Args:
         methods_info_in (dict[str, pd.DataFrame]): The raw soundings info fetched from the API.
         methods_data_in (dict[str, pd.DataFrame]): The raw soundings data fetched from the API.
+        investigations (pd.DataFrame, optional): Investigation data used to include location IDs in cleanup logs.
 
     Returns:
         tuple[pd.DataFrame, pd.DataFrame]: A tuple containing the post-processed soundings data and info DataFrames.
@@ -175,6 +177,13 @@ def postprocess_methods_data_and_info(
             canonical_columns=MethodDataDataFrame.nadag_fields(),
         )
 
+        if method_type == FIELD.tot.name:
+            method_data_normalized = drop_duplicate_tot_method_data(
+                method_data_normalized,
+                method_info=method_info,
+                investigations=investigations,
+            )
+
         new_data.append(method_data_normalized)
         new_info.append(method_info)
 
@@ -191,6 +200,103 @@ def postprocess_methods_data_and_info(
         new_info_df = pd.concat(new_info, ignore_index=True).reset_index(drop=True)
 
     return new_info_df, new_data_df
+
+
+def drop_duplicate_tot_method_data(
+    method_data: pd.DataFrame,
+    method_info: pd.DataFrame | None = None,
+    investigations: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Drop exact duplicate TOT observation rows within each method.
+
+    NADAG can return complete duplicated total sounding (TOT) series from the API itself. We treat TOT rows with the
+    same method ID and the same primary observed values as duplicated observations, not as separate measurements. This
+    cleanup is intentionally scoped to TOT data and logs every deletion so it is visible if rows are removed.
+    """
+    if method_data.empty or MethodDataDataFrame.depth.value not in method_data.columns:
+        return method_data
+
+    work_data = method_data.reset_index(drop=True)
+    method_type_col = MethodDataFrame.method_type.name
+    tot_data = work_data
+    if method_type_col in work_data.columns:
+        tot_data = work_data.loc[work_data[method_type_col] == FIELD.tot.name]
+        if tot_data.empty:
+            return method_data
+
+    method_id_col = MethodDataFrame.method_id.name
+    if method_id_col not in tot_data.columns:
+        return method_data
+
+    data_columns = [
+        MethodDataDataFrame.depth.value,
+        MethodDataDataFrame.penetration_force.value,
+        MethodDataDataFrame.penetration_time.value,
+        MethodDataDataFrame.comment_code.value,
+        MethodDataDataFrame.comment.value,
+    ]
+    deduplicate_columns = [method_id_col, *[col for col in data_columns if col in tot_data.columns]]
+    if method_type_col in tot_data.columns:
+        deduplicate_columns.insert(1, method_type_col)
+
+    duplicated_mask = pd.Series(False, index=work_data.index)
+    location_ids = _get_method_location_ids(method_info, investigations)
+
+    for method_id, method_group in tot_data.groupby(method_id_col, sort=False, dropna=False):
+        group_duplicated = method_group.duplicated(subset=deduplicate_columns, keep="first")
+        removed_count = int(group_duplicated.sum())
+        if removed_count == 0:
+            continue
+
+        original_count = len(method_group)
+        cleaned_count = original_count - removed_count
+        duplicated_mask.loc[method_group.index] = group_duplicated
+        logger.warning(
+            "Dropped duplicate TOT method data rows: "
+            f"location_id={location_ids.get(method_id)}, "
+            f"method_id={method_id}, "
+            f"method_type={FIELD.tot.name}, "
+            f"original_row_count={original_count}, "
+            f"cleaned_row_count={cleaned_count}, "
+            f"removed_row_count={removed_count}, "
+            f"deduplicate_columns={deduplicate_columns}"
+        )
+
+    if not duplicated_mask.any():
+        return method_data
+
+    return work_data.loc[~duplicated_mask].reset_index(drop=True)
+
+
+def _get_method_location_ids(
+    method_info: pd.DataFrame | None,
+    investigations: pd.DataFrame | None,
+) -> dict[object, object]:
+    if method_info is None or method_info.empty or MethodDataFrame.method_id.name not in method_info.columns:
+        return {}
+
+    gbhu_to_location = {}
+    location_id_col = MethodDataFrame.location_id.value
+    if (
+        investigations is not None
+        and not investigations.empty
+        and FIELD.id_field in investigations.columns
+        and location_id_col in investigations.columns
+    ):
+        gbhu_to_location = (
+            investigations[[FIELD.id_field, location_id_col]]
+            .drop_duplicates(subset=[FIELD.id_field])
+            .set_index(FIELD.id_field)[location_id_col]
+            .to_dict()
+        )
+
+    if FIELD.model_gbhu_id not in method_info.columns:
+        return {method_id: None for method_id in method_info[MethodDataFrame.method_id.name].drop_duplicates()}
+
+    return {
+        row[MethodDataFrame.method_id.name]: gbhu_to_location.get(row[FIELD.model_gbhu_id])
+        for _, row in method_info[[MethodDataFrame.method_id.name, FIELD.model_gbhu_id]].drop_duplicates().iterrows()
+    }
 
 
 def create_flagged_column(

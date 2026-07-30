@@ -361,7 +361,11 @@ async def get_method_and_sample_nadag_data(http_client: NadagHTTPClient, temp_da
             f"Original error: {e}"
         ) from e
 
-    soundings_info, soundings_data = postprocess_methods_data_and_info(soundings_info_pre, soundings_data_pre)
+    soundings_info, soundings_data = postprocess_methods_data_and_info(
+        soundings_info_pre,
+        soundings_data_pre,
+        investigations=temp_data.investigations,
+    )
 
     soundings_info = add_empty_soundings(temp_data.investigations, soundings_info)
 

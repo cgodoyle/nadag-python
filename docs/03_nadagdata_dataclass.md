@@ -22,6 +22,8 @@ The class contains several attributes, each representing a different aspect of t
 - `methods_data`: A DataFrame containing the actual data from the geotechnical methods, such as measurements and observations.
                   It maps to the `xxxObservasjon` fields of the `GeotekniskBorehullUnders` collection of the NADAG API, where `xxx` is a different spelling of the method (e.g. `kombinasjonSonderingObservasjon`, `statiskSonderingObservasjon`, `trykksonderingObservasjon`).
 
+  Data quality cleanup: for total soundings (`tot` / `kombinasjonSondering`) NADAG may return duplicated observation rows from the API. During post-processing, `nadag_python` drops exact duplicate TOT rows within each `method_id` when the same depth (`boretLengde`), penetration force (`anvendtLast`), penetration time (`nedpressingTid`), observation code (`observasjonKode`) and observation comment (`observasjonMerknad`) are repeated. This cleanup is scoped to TOT data only and logs a warning with the `location_id`, `method_id`, original row count, cleaned row count and removed row count whenever rows are removed.
+
 - `test_series_data`: A DataFrame containing data related to test series, which are specific types of geotechnical investigations that involve multiple samples and tests. It maps to the `metode-GeotekniskPrøveserie` field of the `GeotekniskBorehullUnders` collection of the NADAG API and its related data in `geotekniskproveseriedeldata`.
 
 - `test_series_aggregated`: A GeoDataFrame that aggregates the test series data, providing a spatial representation of the test series along with relevant attributes.
@@ -300,4 +302,3 @@ samples
   y: float64
   z: float64
 ```
-
