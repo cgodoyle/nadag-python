@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 <!-- version list -->
 
+## v0.2.3 (2026-07-30)
+
+### Bug Fixes
+
+- Deduplicate repeated TOT method observations
+  ([`f234a2f`](https://github.com/cgodoyle/nadag-python/commit/f234a2f1a7eaf1a7ce3eea5a662ac99d05ca6e8f))
+
+
 ## v0.2.2 (2026-07-30)
 
 ### Bug Fixes
