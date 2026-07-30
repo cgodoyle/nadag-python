@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 <!-- version list -->
 
+## v0.2.2 (2026-07-30)
+
+### Bug Fixes
+
+- Flag synthesized empty soundings
+  ([`9177e34`](https://github.com/cgodoyle/nadag-python/commit/9177e34455342d57afcc1ae93f001aed2a851624))
+
+
 ## v0.2.1 (2026-07-10)
 
 ### Bug Fixes
