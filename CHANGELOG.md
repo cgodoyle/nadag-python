@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 <!-- version list -->
 
+## v0.4.0 (2026-07-31)
+
+### Features
+
+- Add metadata-only bounds fetch
+  ([`b0d4dd5`](https://github.com/cgodoyle/nadag-python/commit/b0d4dd57ed5a0f923cac2fc595d3a167723b760f))
+
+
 ## v0.3.0 (2026-07-31)
 
 ### Features
