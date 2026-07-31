@@ -13,7 +13,7 @@ from .data_models import (
     PaginatedResponse,
     SampleDataFrame,
 )
-from .http_client import NadagHTTPClient
+from .http_client import NadagHTTPClient, TimeoutSeconds
 from .logging import get_module_logger
 from .postprocessing import (
     add_empty_soundings,
@@ -36,14 +36,32 @@ from .utils import (
 logger = get_module_logger(__name__)
 
 
-async def check_api_status() -> bool:
+async def check_api_status(
+    timeout_seconds: TimeoutSeconds | None = None,
+    connect_timeout_seconds: TimeoutSeconds | None = None,
+    read_timeout_seconds: TimeoutSeconds | None = None,
+    write_timeout_seconds: TimeoutSeconds | None = None,
+    pool_timeout_seconds: TimeoutSeconds | None = None,
+    retry_attempts: int | None = None,
+    retry_min_wait: TimeoutSeconds | None = None,
+    retry_max_wait: TimeoutSeconds | None = None,
+) -> bool:
     """
     Check the status of the NADAG API.
 
     Returns:
         bool: True if the API is reachable and returns a successful status code, False otherwise.
     """
-    client = NadagHTTPClient()
+    client = NadagHTTPClient(
+        timeout_seconds=timeout_seconds,
+        connect_timeout_seconds=connect_timeout_seconds,
+        read_timeout_seconds=read_timeout_seconds,
+        write_timeout_seconds=write_timeout_seconds,
+        pool_timeout_seconds=pool_timeout_seconds,
+        retry_attempts=retry_attempts,
+        retry_min_wait=retry_min_wait,
+        retry_max_wait=retry_max_wait,
+    )
     return await client.check_api_status()
 
 
@@ -408,6 +426,14 @@ async def fetch_from_bounds(
     bounds: BoundingBox,
     max_distance_query: int | float = settings.API_MAX_DIST_QUERY,
     pagination_concurrency: int | None = None,
+    timeout_seconds: TimeoutSeconds | None = None,
+    connect_timeout_seconds: TimeoutSeconds | None = None,
+    read_timeout_seconds: TimeoutSeconds | None = None,
+    write_timeout_seconds: TimeoutSeconds | None = None,
+    pool_timeout_seconds: TimeoutSeconds | None = None,
+    retry_attempts: int | None = None,
+    retry_min_wait: TimeoutSeconds | None = None,
+    retry_max_wait: TimeoutSeconds | None = None,
 ) -> NadagData:
     """
     Fetch features from the API within the specified bounds.
@@ -426,7 +452,16 @@ async def fetch_from_bounds(
     logger.info(f"Fetching features in bounds: {bounds}")
     logger.debug(settings.model_dump())
 
-    async with NadagHTTPClient() as http_client:
+    async with NadagHTTPClient(
+        timeout_seconds=timeout_seconds,
+        connect_timeout_seconds=connect_timeout_seconds,
+        read_timeout_seconds=read_timeout_seconds,
+        write_timeout_seconds=write_timeout_seconds,
+        pool_timeout_seconds=pool_timeout_seconds,
+        retry_attempts=retry_attempts,
+        retry_min_wait=retry_min_wait,
+        retry_max_wait=retry_max_wait,
+    ) as http_client:
         t0 = time.monotonic()
         gbhu_response, gbh_response = await asyncio.gather(
             get_features_in_bbox(
@@ -470,7 +505,17 @@ async def fetch_from_bounds(
         return temp_data
 
 
-async def fetch_from_location_ids(location_ids: list[str]) -> NadagData:
+async def fetch_from_location_ids(
+    location_ids: list[str],
+    timeout_seconds: TimeoutSeconds | None = None,
+    connect_timeout_seconds: TimeoutSeconds | None = None,
+    read_timeout_seconds: TimeoutSeconds | None = None,
+    write_timeout_seconds: TimeoutSeconds | None = None,
+    pool_timeout_seconds: TimeoutSeconds | None = None,
+    retry_attempts: int | None = None,
+    retry_min_wait: TimeoutSeconds | None = None,
+    retry_max_wait: TimeoutSeconds | None = None,
+) -> NadagData:
     """
     Fetch data from the NADAG API for a given list of location IDs.
 
@@ -480,7 +525,16 @@ async def fetch_from_location_ids(location_ids: list[str]) -> NadagData:
         NadagData: A NadagData object containing the fetched data for the given location ID.
     """
 
-    async with NadagHTTPClient() as nadag_client:
+    async with NadagHTTPClient(
+        timeout_seconds=timeout_seconds,
+        connect_timeout_seconds=connect_timeout_seconds,
+        read_timeout_seconds=read_timeout_seconds,
+        write_timeout_seconds=write_timeout_seconds,
+        pool_timeout_seconds=pool_timeout_seconds,
+        retry_attempts=retry_attempts,
+        retry_min_wait=retry_min_wait,
+        retry_max_wait=retry_max_wait,
+    ) as nadag_client:
         href_list = [
             nadag_client.build_collection_url(collection="geotekniskborehull") + f"/{lid}" for lid in location_ids
         ]

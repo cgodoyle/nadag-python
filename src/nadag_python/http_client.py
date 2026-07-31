@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from collections.abc import AsyncGenerator
+from dataclasses import dataclass
 from typing import Any, cast
 from urllib.parse import parse_qs, urlparse
 
@@ -8,7 +9,7 @@ import httpx
 from tenacity import (
     before_sleep_log,
     retry,
-    retry_if_exception_type,
+    retry_if_exception,
     stop_after_attempt,
     wait_exponential,
 )
@@ -21,12 +22,59 @@ from .data_models import (
 from .logging import get_module_logger
 from .utils import clean_url, safe_extract_features, safe_extract_properties, safe_first
 
-TIMEOUT = httpx.Timeout(
-    connect=settings.API_TIMEOUT,
-    read=settings.API_TIMEOUT,
-    pool=settings.API_POOL_TIMEOUT,
-    write=settings.API_WRITE_TIMEOUT,
-)
+TimeoutSeconds = int | float
+
+
+@dataclass(frozen=True)
+class RequestOptions:
+    timeout_seconds: TimeoutSeconds | None = None
+    connect_timeout_seconds: TimeoutSeconds | None = None
+    read_timeout_seconds: TimeoutSeconds | None = None
+    write_timeout_seconds: TimeoutSeconds | None = None
+    pool_timeout_seconds: TimeoutSeconds | None = None
+    retry_attempts: int | None = None
+    retry_min_wait: TimeoutSeconds | None = None
+    retry_max_wait: TimeoutSeconds | None = None
+
+    @property
+    def timeout(self) -> httpx.Timeout:
+        timeout_seconds = self.timeout_seconds if self.timeout_seconds is not None else settings.API_TIMEOUT
+        return httpx.Timeout(
+            connect=self.connect_timeout_seconds if self.connect_timeout_seconds is not None else timeout_seconds,
+            read=self.read_timeout_seconds if self.read_timeout_seconds is not None else timeout_seconds,
+            pool=self.pool_timeout_seconds if self.pool_timeout_seconds is not None else settings.API_POOL_TIMEOUT,
+            write=self.write_timeout_seconds if self.write_timeout_seconds is not None else settings.API_WRITE_TIMEOUT,
+        )
+
+    @property
+    def max_attempts(self) -> int:
+        return self.retry_attempts if self.retry_attempts is not None else settings.API_RETRY_ATTEMPTS
+
+    @property
+    def wait_min(self) -> TimeoutSeconds:
+        return self.retry_min_wait if self.retry_min_wait is not None else settings.API_RETRY_MIN_WAIT
+
+    @property
+    def wait_max(self) -> TimeoutSeconds:
+        return self.retry_max_wait if self.retry_max_wait is not None else settings.API_RETRY_MAX_WAIT
+
+
+TRANSIENT_HTTP_STATUS_CODES = {429, 502, 503, 504}
+
+
+def _is_retryable_exception(exc: BaseException) -> bool:
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code in TRANSIENT_HTTP_STATUS_CODES
+    return isinstance(
+        exc,
+        (
+            ConnectionError,
+            TimeoutError,
+            httpx.TimeoutException,
+            httpx.ConnectError,
+            httpx.RemoteProtocolError,
+        ),
+    )
 
 logger = get_module_logger(__name__)
 
@@ -34,26 +82,20 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 def api_retry(
-    max_attempts=settings.API_RETRY_ATTEMPTS,
-    wait_min=settings.API_RETRY_MIN_WAIT,
-    wait_max=settings.API_RETRY_MAX_WAIT,
+    max_attempts: int | None = None,
+    wait_min: TimeoutSeconds | None = None,
+    wait_max: TimeoutSeconds | None = None,
 ):
     """Simple retry decorator for API calls"""
     return retry(
-        stop=stop_after_attempt(max_attempts),
-        wait=wait_exponential(multiplier=1, min=wait_min, max=wait_max),
-        retry=retry_if_exception_type(
-            (
-                ConnectionError,
-                TimeoutError,
-                httpx.ConnectTimeout,
-                httpx.ReadTimeout,
-                httpx.WriteTimeout,
-                httpx.PoolTimeout,
-                httpx.ConnectError,
-                httpx.RemoteProtocolError,
-            )
+        stop=stop_after_attempt(max_attempts if max_attempts is not None else settings.API_RETRY_ATTEMPTS),
+        wait=wait_exponential(
+            multiplier=1,
+            min=wait_min if wait_min is not None else settings.API_RETRY_MIN_WAIT,
+            max=wait_max if wait_max is not None else settings.API_RETRY_MAX_WAIT,
         ),
+        retry=retry_if_exception(_is_retryable_exception),
+        reraise=True,
         before_sleep=before_sleep_log(logger, logging.WARNING),
     )
 
@@ -72,15 +114,33 @@ class NadagHTTPClient:
         self,
         base_url: str = settings.API_BASE_URL,
         max_concurrency: int = settings.API_MAX_CONCURRENCY,
+        timeout_seconds: TimeoutSeconds | None = None,
+        connect_timeout_seconds: TimeoutSeconds | None = None,
+        read_timeout_seconds: TimeoutSeconds | None = None,
+        write_timeout_seconds: TimeoutSeconds | None = None,
+        pool_timeout_seconds: TimeoutSeconds | None = None,
+        retry_attempts: int | None = None,
+        retry_min_wait: TimeoutSeconds | None = None,
+        retry_max_wait: TimeoutSeconds | None = None,
     ):
         self.base_url = clean_url(base_url)
         self.semaphore = asyncio.Semaphore(max_concurrency)
+        self.request_options = RequestOptions(
+            timeout_seconds=timeout_seconds,
+            connect_timeout_seconds=connect_timeout_seconds,
+            read_timeout_seconds=read_timeout_seconds,
+            write_timeout_seconds=write_timeout_seconds,
+            pool_timeout_seconds=pool_timeout_seconds,
+            retry_attempts=retry_attempts,
+            retry_min_wait=retry_min_wait,
+            retry_max_wait=retry_max_wait,
+        )
         self._client: httpx.AsyncClient | None = None
         self._owns_client = False
 
     async def __aenter__(self) -> "NadagHTTPClient":
         if self._client is None:
-            self._client = httpx.AsyncClient(timeout=TIMEOUT)
+            self._client = httpx.AsyncClient(timeout=self.request_options.timeout)
             self._owns_client = True
         return self
 
@@ -93,15 +153,21 @@ class NadagHTTPClient:
     def _get_client(self) -> httpx.AsyncClient:
         """Return the shared client, creating one lazily if not in context manager."""
         if self._client is None:
-            self._client = httpx.AsyncClient(timeout=TIMEOUT)
+            self._client = httpx.AsyncClient(timeout=self.request_options.timeout)
             self._owns_client = True
         return self._client
+
+    def _api_retry(self):
+        return api_retry(
+            max_attempts=self.request_options.max_attempts,
+            wait_min=self.request_options.wait_min,
+            wait_max=self.request_options.wait_max,
+        )
 
     @property
     def query_url(self):
         return self.base_url + "/{collection}/items"
 
-    @api_retry()
     async def check_api_status(self) -> bool:
         """Check the status of the NADAG API.
 
@@ -110,10 +176,10 @@ class NadagHTTPClient:
         """
         client = self._get_client()
         try:
-            response = await client.get(self.base_url)
+            response = await self._get_response(client, self.base_url, raise_for_status=False)
             return response.is_success
 
-        except httpx.RequestError as e:
+        except httpx.HTTPError as e:
             logger.warning(f"API status check failed: {e}")
             return False
 
@@ -141,7 +207,6 @@ class NadagHTTPClient:
 
         return base
 
-    @api_retry()
     async def get_feature(self, url: str) -> dict:
         """Fetch a single feature by its URL.
 
@@ -154,9 +219,7 @@ class NadagHTTPClient:
         url = clean_url(url)
         client = self._get_client()
         async with self.semaphore:
-            response = await client.get(url)
-            response.raise_for_status()
-            return response.json()
+            return await self._fetch_json(client, url)
 
     async def get_features_from_urls(self, urls: list[str], chunk_size: int | None = None) -> list[dict]:
         """Fetch features from a list of URLs asynchronously.
@@ -210,12 +273,9 @@ class NadagHTTPClient:
         """
         client = self._get_client()
 
-        @api_retry()
         async def fetch(url: str):
             async with self.semaphore:
-                response = await client.get(clean_url(url))
-                response.raise_for_status()
-                return response.json()
+                return await self._fetch_json(client, clean_url(url))
 
         tasks = [fetch(url) for url in urls]
         for coro in asyncio.as_completed(tasks):
@@ -312,14 +372,29 @@ class NadagHTTPClient:
                     None,
                 )
 
-    @api_retry()
     async def _fetch_page(self, client: httpx.AsyncClient, url: str, params: dict | None = None) -> dict:
         """Fetch a single page with retry support."""
-        response = await client.get(url, params=params)
-        response.raise_for_status()
+        return await self._fetch_json(client, url, params=params)
+
+    async def _get_response(
+        self,
+        client: httpx.AsyncClient,
+        url: str,
+        params: dict | None = None,
+        raise_for_status: bool = True,
+    ) -> httpx.Response:
+        async def send() -> httpx.Response:
+            response = await client.get(url, params=params)
+            if raise_for_status or response.status_code in TRANSIENT_HTTP_STATUS_CODES:
+                response.raise_for_status()
+            return response
+
+        return await self._api_retry()(send)()
+
+    async def _fetch_json(self, client: httpx.AsyncClient, url: str, params: dict | None = None) -> dict:
+        response = await self._get_response(client, url, params=params)
         return response.json()
 
-    @api_retry()
     async def _get_async(self, href: str, params: dict | None = None) -> dict | None:
         """Fetch a single URL and handle pagination if necessary.
 
@@ -347,9 +422,7 @@ class NadagHTTPClient:
                 first_page = False
 
                 try:
-                    response = await client.get(next_url, params=current_params)
-                    response.raise_for_status()
-                    data = response.json()
+                    data = await self._fetch_json(client, next_url, params=current_params)
 
                     if data.get("features"):
                         all_features.extend(data["features"])

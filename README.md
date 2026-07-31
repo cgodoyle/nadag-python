@@ -21,6 +21,21 @@ pip install git+https://github.com/cgodoyle/nadag-python.git
 
 ## Usage
 
+Long default timeouts and retries are kept for batch jobs. Interactive callers can pass per-call controls without changing environment variables:
+
+```python
+await check_api_status(timeout_seconds=3, retry_attempts=1)
+
+data = await fetch_from_bounds(bounds, timeout_seconds=20, retry_attempts=2)
+data = await fetch_from_location_ids(location_ids, timeout_seconds=20, retry_attempts=2)
+```
+
+Suggested profiles:
+
+- Interactive/UI: `timeout_seconds=20`, `retry_attempts=1` or `2`
+- Status check: `timeout_seconds=3`, `retry_attempts=1`
+- Batch/default: omit these arguments to use settings defaults
+
 ## API Audit Tool
 
 The package includes a developer tool that compares the local data models against the live NADAG API to detect field mismatches, typos, and schema changes:
