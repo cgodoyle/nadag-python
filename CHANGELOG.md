@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 <!-- version list -->
 
+## v0.3.0 (2026-07-31)
+
+### Features
+
+- Add per-call timeout and retry controls
+  ([`f2c5706`](https://github.com/cgodoyle/nadag-python/commit/f2c57062b4e62788069b35f6efa5ae2f1808d3e6))
+
+
 ## v0.2.3 (2026-07-30)
 
 ### Bug Fixes
