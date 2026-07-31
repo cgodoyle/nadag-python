@@ -3,6 +3,7 @@ import pandas as pd
 from shapely.geometry import Point
 
 from nadag_python.data_models import FIELD, MethodDataDataFrame, MethodDataFrame, NadagData
+from nadag_python.nadag_functions import build_methods_info_from_metadata
 from nadag_python.postprocessing import add_empty_soundings, get_boreholes_and_samples
 
 
@@ -112,3 +113,28 @@ class TestEmptySoundingsFlag:
 
         assert len(boreholes) == 2
         assert non_empty_boreholes[MethodDataFrame.method_id.name].tolist() == ["method-normal"]
+
+    def test_build_methods_info_from_metadata_uses_bbox_features_only(self):
+        investigations = self._investigations()
+        investigations.at[0, FIELD.tot.metode_key] = [{"title": "method-normal", "href": "https://example.test/tot-1"}]
+        nadag_data = NadagData(
+            bounds=(10, 60, 11, 61),
+            locations=self._locations(),
+            investigations=investigations,
+        )
+
+        methods_info = build_methods_info_from_metadata(nadag_data)
+
+        assert MethodDataFrame.method_id.name in methods_info.columns
+        assert MethodDataFrame.gbhu_id.name in methods_info.columns
+        assert MethodDataFrame.location_id.name in methods_info.columns
+        assert MethodDataFrame.location_name.value in methods_info.columns
+        assert MethodDataFrame.depth.value in methods_info.columns
+        assert MethodDataFrame.method_type_nadag.value in methods_info.columns
+        assert MethodDataFrame.geometry.value in methods_info.columns
+
+        rows_by_id = methods_info.set_index(MethodDataFrame.method_id.name)
+        assert not rows_by_id.loc["method-normal", MethodDataFrame.is_empty_sounding.name]
+        assert rows_by_id.loc["method-normal", MethodDataFrame.location_name.value] == "BH-1"
+        assert rows_by_id.loc["gbhu-empty_15", MethodDataFrame.is_empty_sounding.name]
+        assert rows_by_id.loc["gbhu-empty_15", MethodDataFrame.location_name.value] == "BH-2"

@@ -9,6 +9,8 @@ from .config import CRS, settings
 from .data_models import (
     FIELD,
     MethodDataDataFrame,
+    MethodDataFrame,
+    MethodsConfig,
     NadagData,
     PaginatedResponse,
     SampleDataFrame,
@@ -158,6 +160,130 @@ async def get_features_in_bbox(
 
     response_list = [item for item in response_list if isinstance(item, PaginatedResponse) and len(item) > 0]
     return PaginatedResponse.merge(response_list)
+
+
+async def _fetch_base_from_bounds(
+    http_client: NadagHTTPClient,
+    bounds: BoundingBox,
+    max_distance_query: int | float = settings.API_MAX_DIST_QUERY,
+    pagination_concurrency: int | None = None,
+) -> NadagData:
+    t0 = time.monotonic()
+    gbhu_response, gbh_response = await asyncio.gather(
+        get_features_in_bbox(
+            http_client,
+            bounds,
+            FIELD.geotekniskborehullunders,
+            max_dist_query=max_distance_query,
+            pagination_concurrency=pagination_concurrency,
+        ),
+        get_features_in_bbox(
+            http_client,
+            bounds,
+            FIELD.geotekniskborehull,
+            max_dist_query=max_distance_query,
+            pagination_concurrency=pagination_concurrency,
+        ),
+    )
+    logger.info(f"Bbox feature fetch took {time.monotonic() - t0:.1f}s")
+
+    if len(gbhu_response) == 0:
+        logger.warning(f"No features found in {FIELD.geotekniskborehullunders} collection for the given bounds.")
+        return NadagData(bounds=tuple(bounds))
+
+    investigations = gbhu_response.to_gdf()
+    logger.info(f"Fetched {len(investigations)} features in {FIELD.geotekniskborehullunders} collection.")
+
+    locations = gbh_response.to_gdf()
+    logger.info(f"Fetched {len(locations)} features in {FIELD.geotekniskborehull} collection.")
+
+    return NadagData(
+        bounds=tuple(bounds),
+        locations=locations,
+        investigations=investigations,
+    )
+
+
+def build_methods_info_from_metadata(nadag_data: NadagData) -> pd.DataFrame:
+    """Build map-ready method metadata from bbox investigation and location features only."""
+    investigations = nadag_data.investigations
+    locations = nadag_data.locations
+    if investigations is None or investigations.empty:
+        return pd.DataFrame()
+
+    location_lookup = pd.DataFrame()
+    if locations is not None and not locations.empty and FIELD.id_field in locations.columns:
+        location_columns = [
+            FIELD.id_field,
+            MethodDataFrame.location_name.value,
+            MethodDataFrame.depth.value,
+            MethodDataFrame.elevation.value,
+            MethodDataFrame.investigation_area_id.value,
+            MethodDataFrame.geometry.value,
+        ]
+        location_lookup = locations[[col for col in location_columns if col in locations.columns]].copy()
+
+    rows = []
+    for _, investigation in investigations.iterrows():
+        gbhu_id = investigation.get(FIELD.id_field)
+        location_id = investigation.get(MethodDataFrame.location_id.value)
+
+        location = pd.Series(dtype="object")
+        if not location_lookup.empty and location_id is not None:
+            matches = location_lookup.loc[location_lookup[FIELD.id_field] == location_id]
+            if not matches.empty:
+                location = matches.iloc[0]
+
+        base = {
+            MethodDataFrame.gbhu_id.name: gbhu_id,
+            MethodDataFrame.location_id.name: location_id,
+            MethodDataFrame.location_name.value: location.get(MethodDataFrame.location_name.value),
+            MethodDataFrame.depth.value: location.get(MethodDataFrame.depth.value),
+            MethodDataFrame.method_type_nadag.value: investigation.get(MethodDataFrame.method_type_nadag.value),
+            MethodDataFrame.geometry.value: location.get(MethodDataFrame.geometry.value, investigation.get("geometry")),
+            MethodDataFrame.elevation.value: location.get(MethodDataFrame.elevation.value),
+            MethodDataFrame.investigation_area_id.value: location.get(MethodDataFrame.investigation_area_id.value),
+            MethodDataFrame.depth_to_rock.value: investigation.get(MethodDataFrame.depth_to_rock.value),
+            MethodDataFrame.depth_to_rock_quality.value: investigation.get(MethodDataFrame.depth_to_rock_quality.value),
+            MethodDataFrame.is_empty_sounding.name: False,
+        }
+
+        has_method = False
+        for method in FIELD.methods:
+            method_value = investigation.get(method.metode_key)
+            if method.metode_key not in investigations.columns or method_value is None:
+                continue
+            if not isinstance(method_value, (list, tuple)) and pd.isna(method_value):
+                continue
+            method_ref = safe_first(method_value, {})
+            method_id = method_ref.get("title") if isinstance(method_ref, dict) else None
+            if method_id is None:
+                continue
+            rows.append(
+                {
+                    **base,
+                    MethodDataFrame.method_id.name: method_id,
+                    MethodDataFrame.method_type.name: method.name,
+                    FIELD.href: method_ref.get(FIELD.href),
+                }
+            )
+            has_method = True
+
+        if has_method:
+            continue
+
+        method_type = str(investigation.get(MethodDataFrame.method_type_nadag.value, ""))
+        if method_type in tuple(MethodsConfig.SOUNDINGS_FILTER):
+            rows.append(
+                {
+                    **base,
+                    MethodDataFrame.method_id.name: f"{gbhu_id}_{method_type}",
+                    MethodDataFrame.method_type.name: MethodsConfig.GEOTEKNISKMETODE_TO_METHOD_TYPE_MAPPER.get(method_type),
+                    MethodDataFrame.is_empty_sounding.name: True,
+                }
+            )
+
+    return pd.DataFrame(rows)
 
 
 async def get_soundings_data_raw(
@@ -463,46 +589,67 @@ async def fetch_from_bounds(
         retry_max_wait=retry_max_wait,
     ) as http_client:
         t0 = time.monotonic()
-        gbhu_response, gbh_response = await asyncio.gather(
-            get_features_in_bbox(
-                http_client,
-                bounds,
-                FIELD.geotekniskborehullunders,
-                max_dist_query=max_distance_query,
-                pagination_concurrency=pagination_concurrency,
-            ),
-            get_features_in_bbox(
-                http_client,
-                bounds,
-                FIELD.geotekniskborehull,
-                max_dist_query=max_distance_query,
-                pagination_concurrency=pagination_concurrency,
-            ),
+        temp_data = await _fetch_base_from_bounds(
+            http_client,
+            bounds,
+            max_distance_query=max_distance_query,
+            pagination_concurrency=pagination_concurrency,
         )
-        logger.info(f"Bbox feature fetch took {time.monotonic() - t0:.1f}s")
 
-        if len(gbhu_response) == 0:
-            logger.warning(f"No features found in {FIELD.geotekniskborehullunders} collection for the given bounds.")
-            return NadagData(bounds=tuple(bounds))
-
-        investigations = gbhu_response.to_gdf()
-        logger.info(f"Fetched {len(investigations)} features in {FIELD.geotekniskborehullunders} collection.")
-
-        locations = gbh_response.to_gdf()
-        logger.info(f"Fetched {len(locations)} features in {FIELD.geotekniskborehull} collection.")
-
-        # Create intermediate object for soundings fetch
-        temp_data = NadagData(
-            bounds=tuple(bounds),
-            locations=locations,
-            investigations=investigations,
-        )
+        if temp_data.investigations.empty:
+            logger.info(f"Total fetch_from_bounds took {time.monotonic() - t0:.1f}s")
+            return temp_data
 
         t1 = time.monotonic()
         temp_data = await get_method_and_sample_nadag_data(http_client, temp_data)
         logger.info(f"Method & sample fetch took {time.monotonic() - t1:.1f}s")
         logger.info(f"Total fetch_from_bounds took {time.monotonic() - t0:.1f}s")
         return temp_data
+
+
+async def fetch_metadata_from_bounds(
+    bounds: BoundingBox,
+    max_distance_query: int | float = settings.API_MAX_DIST_QUERY,
+    pagination_concurrency: int | None = None,
+    timeout_seconds: TimeoutSeconds | None = None,
+    connect_timeout_seconds: TimeoutSeconds | None = None,
+    read_timeout_seconds: TimeoutSeconds | None = None,
+    write_timeout_seconds: TimeoutSeconds | None = None,
+    pool_timeout_seconds: TimeoutSeconds | None = None,
+    retry_attempts: int | None = None,
+    retry_min_wait: TimeoutSeconds | None = None,
+    retry_max_wait: TimeoutSeconds | None = None,
+) -> NadagData:
+    """Fetch bbox metadata only, without per-method observations or sample detail data."""
+    logger.info(f"Fetching metadata in bounds: {bounds}")
+    logger.debug(settings.model_dump())
+
+    async with NadagHTTPClient(
+        timeout_seconds=timeout_seconds,
+        connect_timeout_seconds=connect_timeout_seconds,
+        read_timeout_seconds=read_timeout_seconds,
+        write_timeout_seconds=write_timeout_seconds,
+        pool_timeout_seconds=pool_timeout_seconds,
+        retry_attempts=retry_attempts,
+        retry_min_wait=retry_min_wait,
+        retry_max_wait=retry_max_wait,
+    ) as http_client:
+        t0 = time.monotonic()
+        temp_data = await _fetch_base_from_bounds(
+            http_client,
+            bounds,
+            max_distance_query=max_distance_query,
+            pagination_concurrency=pagination_concurrency,
+        )
+        methods_info = build_methods_info_from_metadata(temp_data)
+        logger.info(f"Built {len(methods_info)} method metadata rows from bbox features.")
+        logger.info(f"Total fetch_metadata_from_bounds took {time.monotonic() - t0:.1f}s")
+        return NadagData(
+            bounds=tuple(temp_data.bounds),
+            locations=temp_data.locations,
+            investigations=temp_data.investigations,
+            methods_info=methods_info,
+        )
 
 
 async def fetch_from_location_ids(
