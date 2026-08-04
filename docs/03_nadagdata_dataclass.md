@@ -19,6 +19,8 @@ The class contains several attributes, each representing a different aspect of t
 - `methods_info`: A DataFrame containing metadata about the different geotechnical methods used in the investigations, such as method type and related information.
                   It maps to the `metode-XXX` fields of the `GeotekniskBorehullUnders` collection of the NADAG API, where `XXX` is the type of investigation (e.g. `KombinasjonSondering`, `StatiskSondering`, `TrykkSondering`).
 
+  Coordinate provenance: method/sounding outputs currently use the linked `locations` row (`GeotekniskBorehull`) as the primary source for coordinates. Exported `x` and `y` are derived from `location.geometry`, and exported `z` is derived from `location.høyde` (`elevation`). The `investigations` row (`GeotekniskBorehullUnders`) also contains `geometry`, `høyde`, and `høydeReferanse`, but its geometry is only used as a fallback during metadata construction when no matching location geometry is available. If NADAG reports different coordinates per investigation, the current exported methods can therefore be centralized to the borehole location coordinate.
+
 - `methods_data`: A DataFrame containing the actual data from the geotechnical methods, such as measurements and observations.
                   It maps to the `xxxObservasjon` fields of the `GeotekniskBorehullUnders` collection of the NADAG API, where `xxx` is a different spelling of the method (e.g. `kombinasjonSonderingObservasjon`, `statiskSonderingObservasjon`, `trykksonderingObservasjon`).
 
