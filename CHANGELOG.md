@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 <!-- version list -->
 
+## v0.4.1 (2026-08-07)
+
+### Bug Fixes
+
+- Deduplicate features from segmented bbox queries
+  ([`569a29b`](https://github.com/cgodoyle/nadag-python/commit/569a29b764c739406d778db5dcfc93b3a993ba1f))
+
+### Documentation
+
+- Clarify sounding coordinate provenance
+  ([`b7dbda1`](https://github.com/cgodoyle/nadag-python/commit/b7dbda1913b876f5b63b87c0ad474b2f246f7846))
+
+
 ## v0.4.0 (2026-07-31)
 
 ### Features
