@@ -167,6 +167,83 @@ class TestHTTPClientOptions:
         assert captured_kwargs["retry_attempts"] == 2
 
 
+class TestGetFeaturesInBbox:
+    async def test_deduplicates_identical_features_from_overlapping_sub_bboxes(self, monkeypatch):
+        shared_feature = {
+            "type": "Feature",
+            "id": "shared-id",
+            "properties": {"dokumentID": "shared-id"},
+        }
+        responses = iter(
+            [
+                PaginatedResponse(
+                    features=[
+                        {"type": "Feature", "id": "first-id", "properties": {}},
+                        shared_feature.copy(),
+                    ],
+                    numberReturned=2,
+                ),
+                PaginatedResponse(
+                    features=[
+                        shared_feature.copy(),
+                        {"type": "Feature", "id": "last-id", "properties": {}},
+                    ],
+                    numberReturned=2,
+                ),
+            ]
+        )
+
+        async def fake_get_features_in_bbox_single(*args, **kwargs):
+            return next(responses)
+
+        monkeypatch.setattr(nf, "get_features_in_bbox_single", fake_get_features_in_bbox_single)
+
+        response = await nf.get_features_in_bbox(
+            NadagHTTPClient(),
+            [211993.38433339744, 6648075.313127061, 217185.76397063793, 6649828.643472111],
+            "geotekniskdokument",
+            max_dist_query=2500,
+        )
+
+        assert [feature["id"] for feature in response.features] == ["first-id", "shared-id", "last-id"]
+        assert response.numberReturned == 3
+
+    async def test_preserves_conflicting_features_with_same_id_and_warns(self, monkeypatch):
+        responses = iter(
+            [
+                PaginatedResponse(
+                    features=[{"type": "Feature", "id": "shared-id", "properties": {"value": 1}}],
+                    numberReturned=1,
+                ),
+                PaginatedResponse(
+                    features=[{"type": "Feature", "id": "shared-id", "properties": {"value": 2}}],
+                    numberReturned=1,
+                ),
+            ]
+        )
+        warnings = []
+
+        async def fake_get_features_in_bbox_single(*args, **kwargs):
+            return next(responses)
+
+        monkeypatch.setattr(nf, "get_features_in_bbox_single", fake_get_features_in_bbox_single)
+        monkeypatch.setattr(nf.logger, "warning", warnings.append)
+
+        response = await nf.get_features_in_bbox(
+            NadagHTTPClient(),
+            [211993.38433339744, 6648075.313127061, 217185.76397063793, 6649828.643472111],
+            "geotekniskdokument",
+            max_dist_query=2500,
+        )
+
+        assert [feature["properties"]["value"] for feature in response.features] == [1, 2]
+        assert response.numberReturned == 2
+        assert warnings == [
+            "Collection geotekniskdokument returned different features with the same top-level id 'shared-id'; "
+            "preserving both."
+        ]
+
+
 # ---------------------------------------------------------------------------
 # PaginatedResponse with real fixtures
 # ---------------------------------------------------------------------------

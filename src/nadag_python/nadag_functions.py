@@ -1,5 +1,6 @@
 import asyncio
 import time
+from typing import Any
 
 import geopandas as gpd
 import pandas as pd
@@ -159,7 +160,40 @@ async def get_features_in_bbox(
     )
 
     response_list = [item for item in response_list if isinstance(item, PaginatedResponse) and len(item) > 0]
-    return PaginatedResponse.merge(response_list)
+    merged = PaginatedResponse.merge(response_list)
+    if n_cols == 1 and n_rows == 1:
+        return merged
+
+    features_by_id: dict[Any, list[dict[str, Any]]] = {}
+    unique_features = []
+    for feature in merged.features:
+        feature_id = feature.get("id")
+        if feature_id is None:
+            unique_features.append(feature)
+            continue
+
+        try:
+            matching_features = features_by_id.setdefault(feature_id, [])
+        except TypeError:
+            logger.warning(
+                f"Collection {collection} returned a feature with an unhashable top-level id; preserving it."
+            )
+            unique_features.append(feature)
+            continue
+
+        if feature in matching_features:
+            continue
+        if matching_features:
+            logger.warning(
+                f"Collection {collection} returned different features with the same top-level id {feature_id!r}; "
+                "preserving both."
+            )
+        matching_features.append(feature)
+        unique_features.append(feature)
+
+    merged.features = unique_features
+    merged.numberReturned = len(unique_features)
+    return merged
 
 
 async def _fetch_base_from_bounds(
